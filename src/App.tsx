@@ -43,17 +43,13 @@ function App() {
             <Route path="/documents" element={<Documents />} />
 
             <Route
-              path="/legal-notices"
-              element={<LegalNotices />}
-            />
+  path="/notifications"
+  element={<Notifications />}
+/>
 
-            <Route
-              path="/notifications"
-              element={<Notifications />}
-            />
+<Route path="/staff" element={<Staff />} />
 
-            <Route path="/settings" element={<Settings />} />
-
+<Route path="/settings" element={<Settings />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>
