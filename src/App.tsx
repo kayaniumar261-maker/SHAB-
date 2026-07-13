@@ -1,7 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { Sidebar } from './components/layout/Sidebar';
+import { Sidebar } from './components/layout/sidebar';
 import { MobileNav } from './components/layout/MobileNav';
-import { Dashboard } from './pages/Dashboard';
+import { Dashboard } from './Pages/Dashboard';
 
 function App() {
   return (
