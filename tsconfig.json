@@ -10,13 +10,13 @@
     "strict": true,
     "forceConsistentCasingInFileNames": true,
     "module": "ESNext",
-    "moduleResolution": "Node",
-    ""baseUrl": ".",
-    "paths": {
-      "@/*": ["src/*"]
-      },
-    "isolatedModules": true,
-    "noEmit": true,
+"moduleResolution": "Node",
+"baseUrl": ".",
+"paths": {
+  "@/*": ["src/*"]
+},
+"resolveJsonModule": true,
+"isolatedModules": true,
     "jsx": "react-jsx"
   },
   "include": ["src"],
