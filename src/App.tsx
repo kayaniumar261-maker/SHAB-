@@ -5,23 +5,23 @@ import {
   Routes,
 } from 'react-router-dom';
 
-import { Sidebar } from './components/layout/sidebar';
 import { MobileNav } from './components/layout/MobileNav';
+import { Sidebar } from './components/layout/sidebar';
 
 import { Dashboard } from './Pages/Dashboard';
 import { Clients } from './Pages/Clients';
 
-import { Cases } from './pages/Cases';
-import { Tasks } from './pages/Tasks';
-import { CalendarPage } from './pages/CalendarPage';
 import { AIAssistant } from './pages/AIAssistant';
-import { More } from './pages/More';
+import { CalendarPage } from './pages/CalendarPage';
+import { Cases } from './pages/Cases';
 import { Documents } from './pages/Documents';
 import { LegalNotices } from './pages/LegalNotices';
+import { More } from './pages/More';
 import { Notifications } from './pages/Notifications';
+import { Quotations } from './pages/Quotations';
 import { Settings } from './pages/Settings';
 import { Staff } from './pages/Staff';
-import { Quotations } from './pages/Quotations';
+import { Tasks } from './pages/Tasks';
 
 import { Payments } from './Src/Pages/Payments';
 
@@ -38,11 +38,6 @@ function App() {
             <Route path="/clients" element={<Clients />} />
 
             <Route path="/cases" element={<Cases />} />
-
-<Route
-  path="/ai-assistant"
-  element={<AIAssistant />}
-/>
 
             <Route path="/tasks" element={<Tasks />} />
 
@@ -72,6 +67,11 @@ function App() {
             />
 
             <Route path="/staff" element={<Staff />} />
+
+            <Route
+              path="/ai-assistant"
+              element={<AIAssistant />}
+            />
 
             <Route
               path="/notifications"
