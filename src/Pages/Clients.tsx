@@ -1,5 +1,16 @@
-import { Building2, Mail, Phone, Plus, Search, User } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import {
+  Building2,
+  Mail,
+  Phone,
+  Plus,
+  Search,
+  User,
+} from 'lucide-react';
+import {
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
 
 type ClientType = 'Individual' | 'Company';
 
@@ -12,6 +23,8 @@ type Client = {
   nationality: string;
   notes: string;
 };
+
+const CLIENTS_STORAGE_KEY = 'shab-clients';
 
 const initialClients: Client[] = [
   {
@@ -34,9 +47,38 @@ const initialClients: Client[] = [
   },
 ];
 
+function loadClients(): Client[] {
+  try {
+    const savedClients = window.localStorage.getItem(
+      CLIENTS_STORAGE_KEY,
+    );
+
+    if (!savedClients) {
+      return initialClients;
+    }
+
+    const parsedClients = JSON.parse(savedClients);
+
+    if (!Array.isArray(parsedClients)) {
+      return initialClients;
+    }
+
+    return parsedClients;
+  } catch {
+    return initialClients;
+  }
+}
+
 export function Clients() {
-  const [clients, setClients] = useState<Client[]>(initialClients);
+  const [clients, setClients] = useState<Client[]>(loadClients);
   const [searchTerm, setSearchTerm] = useState('');
+
+  useEffect(() => {
+    window.localStorage.setItem(
+      CLIENTS_STORAGE_KEY,
+      JSON.stringify(clients),
+    );
+  }, [clients]);
 
   const filteredClients = useMemo(() => {
     const search = searchTerm.trim().toLowerCase();
@@ -68,30 +110,103 @@ export function Clients() {
     }
 
     const typeInput =
-      window.prompt('Enter client type: Individual or Company')?.trim() ||
-      'Individual';
+      window
+        .prompt('Enter client type: Individual or Company')
+        ?.trim() || 'Individual';
 
     const type: ClientType =
-      typeInput.toLowerCase() === 'company' ? 'Company' : 'Individual';
+      typeInput.toLowerCase() === 'company'
+        ? 'Company'
+        : 'Individual';
 
-    const phone = window.prompt('Enter phone number')?.trim() || '';
-    const email = window.prompt('Enter email address')?.trim() || '';
+    const phone =
+      window.prompt('Enter phone number')?.trim() || '';
+
+    const email =
+      window.prompt('Enter email address')?.trim() || '';
+
     const nationality =
       window.prompt('Enter nationality or country')?.trim() || '';
-    const notes = window.prompt('Enter client notes')?.trim() || '';
+
+    const notes =
+      window.prompt('Enter client notes')?.trim() || '';
+
+    const newClient: Client = {
+      id: Date.now(),
+      name: name.trim(),
+      type,
+      phone,
+      email,
+      nationality,
+      notes,
+    };
 
     setClients((currentClients) => [
-      {
-        id: Date.now(),
-        name: name.trim(),
-        type,
-        phone,
-        email,
-        nationality,
-        notes,
-      },
+      newClient,
       ...currentClients,
     ]);
+  };
+
+  const editClient = (client: Client) => {
+    const name = window.prompt(
+      'Edit client name',
+      client.name,
+    );
+
+    if (!name?.trim()) {
+      return;
+    }
+
+    const typeInput =
+      window.prompt(
+        'Edit client type: Individual or Company',
+        client.type,
+      ) || client.type;
+
+    const type: ClientType =
+      typeInput.toLowerCase() === 'company'
+        ? 'Company'
+        : 'Individual';
+
+    const phone =
+      window.prompt(
+        'Edit phone number',
+        client.phone,
+      ) ?? client.phone;
+
+    const email =
+      window.prompt(
+        'Edit email address',
+        client.email,
+      ) ?? client.email;
+
+    const nationality =
+      window.prompt(
+        'Edit nationality or country',
+        client.nationality,
+      ) ?? client.nationality;
+
+    const notes =
+      window.prompt(
+        'Edit client notes',
+        client.notes,
+      ) ?? client.notes;
+
+    setClients((currentClients) =>
+      currentClients.map((currentClient) =>
+        currentClient.id === client.id
+          ? {
+              ...currentClient,
+              name: name.trim(),
+              type,
+              phone: phone.trim(),
+              email: email.trim(),
+              nationality: nationality.trim(),
+              notes: notes.trim(),
+            }
+          : currentClient,
+      ),
+    );
   };
 
   const deleteClient = (id: number) => {
@@ -104,7 +219,9 @@ export function Clients() {
     }
 
     setClients((currentClients) =>
-      currentClients.filter((client) => client.id !== id),
+      currentClients.filter(
+        (client) => client.id !== id,
+      ),
     );
   };
 
@@ -112,7 +229,10 @@ export function Clients() {
     <div className="mx-auto max-w-7xl px-4 py-6">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Clients</h1>
+          <h1 className="text-3xl font-bold text-gray-900">
+            Clients
+          </h1>
+
           <p className="mt-1 text-gray-500">
             Manage individual and corporate client records.
           </p>
@@ -134,7 +254,9 @@ export function Clients() {
         <input
           type="search"
           value={searchTerm}
-          onChange={(event) => setSearchTerm(event.target.value)}
+          onChange={(event) =>
+            setSearchTerm(event.target.value)
+          }
           placeholder="Search clients"
           className="w-full bg-transparent text-gray-900 outline-none placeholder:text-gray-400"
         />
@@ -142,7 +264,10 @@ export function Clients() {
 
       <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {filteredClients.map((client) => {
-          const Icon = client.type === 'Company' ? Building2 : User;
+          const Icon =
+            client.type === 'Company'
+              ? Building2
+              : User;
 
           return (
             <article
@@ -166,28 +291,48 @@ export function Clients() {
                   </div>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => deleteClient(client.id)}
-                  className="rounded-lg px-3 py-1 text-sm font-medium text-red-600 hover:bg-red-50"
-                >
-                  Delete
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => editClient(client)}
+                    className="rounded-lg px-3 py-1 text-sm font-medium text-blue-600 hover:bg-blue-50"
+                  >
+                    Edit
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      deleteClient(client.id)
+                    }
+                    className="rounded-lg px-3 py-1 text-sm font-medium text-red-600 hover:bg-red-50"
+                  >
+                    Delete
+                  </button>
+                </div>
               </div>
 
               <div className="mt-5 space-y-3 text-sm text-gray-600">
                 {client.phone && (
-                  <div className="flex items-center gap-2">
+                  <a
+                    href={`tel:${client.phone}`}
+                    className="flex items-center gap-2 hover:text-blue-600"
+                  >
                     <Phone className="h-4 w-4 text-gray-400" />
                     <span>{client.phone}</span>
-                  </div>
+                  </a>
                 )}
 
                 {client.email && (
-                  <div className="flex items-center gap-2">
+                  <a
+                    href={`mailto:${client.email}`}
+                    className="flex items-center gap-2 hover:text-blue-600"
+                  >
                     <Mail className="h-4 w-4 text-gray-400" />
-                    <span className="truncate">{client.email}</span>
-                  </div>
+                    <span className="truncate">
+                      {client.email}
+                    </span>
+                  </a>
                 )}
 
                 {client.nationality && (
