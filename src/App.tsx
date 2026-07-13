@@ -23,7 +23,7 @@ import { Settings } from './pages/Settings';
 import { Staff } from './pages/Staff';
 import { Tasks } from './pages/Tasks';
 
-import { Payments } from './Src/Pages/Payments';
+import { Payments } from '../Src/Pages/Payments';
 
 function App() {
   return (
