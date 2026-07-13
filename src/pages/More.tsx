@@ -6,6 +6,7 @@ import {
   CheckSquare,
   ChevronRight,
   FileText,
+  Gavel,
   ReceiptText,
   Scale,
   Settings,
@@ -35,6 +36,11 @@ const items = [
     label: 'Calendar',
     path: '/calendar',
     icon: Calendar,
+  },
+  {
+    label: 'Hearings',
+    path: '/hearings',
+    icon: Gavel,
   },
   {
     label: 'Documents',
@@ -89,7 +95,7 @@ export function More() {
         </h1>
 
         <p className="mt-1 text-gray-500">
-          Open additional SHAB modules.
+          SHAB Legal ERP Modules
         </p>
       </div>
 
@@ -102,19 +108,25 @@ export function More() {
               key={item.path}
               type="button"
               onClick={() => navigate(item.path)}
-              className="flex w-full items-center justify-between rounded-2xl border border-gray-200 bg-white p-4 text-left shadow-sm transition hover:border-yellow-400 hover:bg-yellow-50"
+              className="flex items-center justify-between rounded-2xl border border-gray-200 bg-white p-4 text-left shadow-sm transition hover:border-[#C9A84C] hover:bg-yellow-50"
             >
-              <span className="flex min-w-0 items-center gap-3">
-                <span className="shrink-0 rounded-xl bg-gray-100 p-3">
-                  <Icon className="h-5 w-5 text-gray-700" />
-                </span>
+              <div className="flex items-center gap-3">
+                <div className="rounded-xl bg-[#111111] p-3">
+                  <Icon className="h-5 w-5 text-[#C9A84C]" />
+                </div>
 
-                <span className="truncate font-semibold text-gray-900">
-                  {item.label}
-                </span>
-              </span>
+                <div>
+                  <p className="font-semibold text-gray-900">
+                    {item.label}
+                  </p>
 
-              <ChevronRight className="h-5 w-5 shrink-0 text-gray-400" />
+                  <p className="text-xs text-gray-500">
+                    Open module
+                  </p>
+                </div>
+              </div>
+
+              <ChevronRight className="h-5 w-5 text-gray-400" />
             </button>
           );
         })}
