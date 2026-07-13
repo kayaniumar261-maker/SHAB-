@@ -6,8 +6,10 @@ import {
   Plus,
   Search,
   Trash2,
+  X,
 } from 'lucide-react';
 import {
+  FormEvent,
   useEffect,
   useMemo,
   useState,
@@ -26,27 +28,36 @@ type TaskItem = {
   completed: boolean;
 };
 
+type TaskForm = Omit<TaskItem, 'id' | 'completed'>;
+
+type StoredCase = {
+  id: number;
+  title: string;
+  reference: string;
+};
+
 const TASKS_STORAGE_KEY = 'shab-tasks';
+const CASES_STORAGE_KEY = 'shab-cases';
+
+const emptyForm: TaskForm = {
+  title: '',
+  description: '',
+  assignedTo: '',
+  relatedCase: '',
+  dueDate: '',
+  priority: 'Medium',
+};
 
 const initialTasks: TaskItem[] = [
   {
     id: 1,
     title: 'Prepare legal notice',
-    description: 'Draft and review the debt recovery legal notice.',
+    description:
+      'Draft and review the debt recovery legal notice.',
     assignedTo: 'Umar Kayani',
     relatedCase: 'SHAB-2026-001',
     dueDate: '2026-07-15',
     priority: 'High',
-    completed: false,
-  },
-  {
-    id: 2,
-    title: 'Call client for documents',
-    description: 'Request Emirates ID, agreement and payment receipts.',
-    assignedTo: 'Nourhan',
-    relatedCase: 'SHAB-2026-002',
-    dueDate: '2026-07-16',
-    priority: 'Medium',
     completed: false,
   },
 ];
@@ -71,12 +82,42 @@ function loadTasks(): TaskItem[] {
   }
 }
 
+function loadCases(): StoredCase[] {
+  try {
+    const savedCases = window.localStorage.getItem(
+      CASES_STORAGE_KEY,
+    );
+
+    if (!savedCases) {
+      return [];
+    }
+
+    const parsedCases = JSON.parse(savedCases);
+
+    return Array.isArray(parsedCases)
+      ? parsedCases
+      : [];
+  } catch {
+    return [];
+  }
+}
+
 export function Tasks() {
   const [tasks, setTasks] =
     useState<TaskItem[]>(loadTasks);
 
+  const [cases, setCases] =
+    useState<StoredCase[]>(loadCases);
+
   const [searchTerm, setSearchTerm] = useState('');
   const [showCompleted, setShowCompleted] = useState(true);
+  const [isFormOpen, setIsFormOpen] = useState(false);
+
+  const [editingTaskId, setEditingTaskId] =
+    useState<number | null>(null);
+
+  const [form, setForm] =
+    useState<TaskForm>(emptyForm);
 
   useEffect(() => {
     window.localStorage.setItem(
@@ -84,6 +125,22 @@ export function Tasks() {
       JSON.stringify(tasks),
     );
   }, [tasks]);
+
+  useEffect(() => {
+    const refreshCases = () => {
+      setCases(loadCases());
+    };
+
+    refreshCases();
+
+    window.addEventListener('focus', refreshCases);
+    window.addEventListener('storage', refreshCases);
+
+    return () => {
+      window.removeEventListener('focus', refreshCases);
+      window.removeEventListener('storage', refreshCases);
+    };
+  }, []);
 
   const filteredTasks = useMemo(() => {
     const search = searchTerm.trim().toLowerCase();
@@ -109,126 +166,92 @@ export function Tasks() {
     });
   }, [tasks, searchTerm, showCompleted]);
 
-  const addTask = () => {
-    const title = window.prompt('Enter task title');
+  const openAddForm = () => {
+    setEditingTaskId(null);
 
-    if (!title?.trim()) {
-      return;
-    }
+    setForm({
+      ...emptyForm,
+      assignedTo: 'Umar Kayani',
+      relatedCase: cases[0]?.reference || '',
+    });
 
-    const description =
-      window.prompt('Enter task description')?.trim() || '';
-
-    const assignedTo =
-      window.prompt('Enter assigned staff member')?.trim() ||
-      'Unassigned';
-
-    const relatedCase =
-      window.prompt('Enter related case reference')?.trim() ||
-      '';
-
-    const dueDate =
-      window.prompt(
-        'Enter due date in YYYY-MM-DD format',
-      )?.trim() || '';
-
-    const priorityInput =
-      window.prompt(
-        'Enter priority: High, Medium or Low',
-      )?.trim() || 'Medium';
-
-    const normalizedPriority =
-      priorityInput.toLowerCase();
-
-    const priority: TaskPriority =
-      normalizedPriority === 'high'
-        ? 'High'
-        : normalizedPriority === 'low'
-          ? 'Low'
-          : 'Medium';
-
-    const newTask: TaskItem = {
-      id: Date.now(),
-      title: title.trim(),
-      description,
-      assignedTo,
-      relatedCase,
-      dueDate,
-      priority,
-      completed: false,
-    };
-
-    setTasks((currentTasks) => [
-      newTask,
-      ...currentTasks,
-    ]);
+    setIsFormOpen(true);
   };
 
-  const editTask = (task: TaskItem) => {
-    const title = window.prompt(
-      'Edit task title',
-      task.title,
-    );
+  const openEditForm = (task: TaskItem) => {
+    setEditingTaskId(task.id);
 
-    if (!title?.trim()) {
+    setForm({
+      title: task.title,
+      description: task.description,
+      assignedTo: task.assignedTo,
+      relatedCase: task.relatedCase,
+      dueDate: task.dueDate,
+      priority: task.priority,
+    });
+
+    setIsFormOpen(true);
+  };
+
+  const closeForm = () => {
+    setIsFormOpen(false);
+    setEditingTaskId(null);
+    setForm(emptyForm);
+  };
+
+  const updateForm = (
+    field: keyof TaskForm,
+    value: string,
+  ) => {
+    setForm((currentForm) => ({
+      ...currentForm,
+      [field]: value,
+    }));
+  };
+
+  const saveTask = (event: FormEvent) => {
+    event.preventDefault();
+
+    if (!form.title.trim()) {
+      window.alert('Task title is required.');
       return;
     }
 
-    const description =
-      window.prompt(
-        'Edit task description',
-        task.description,
-      ) ?? task.description;
+    if (editingTaskId !== null) {
+      setTasks((currentTasks) =>
+        currentTasks.map((task) =>
+          task.id === editingTaskId
+            ? {
+                ...task,
+                ...form,
+                title: form.title.trim(),
+                description: form.description.trim(),
+                assignedTo: form.assignedTo.trim(),
+                relatedCase: form.relatedCase.trim(),
+                dueDate: form.dueDate.trim(),
+              }
+            : task,
+        ),
+      );
+    } else {
+      const newTask: TaskItem = {
+        id: Date.now(),
+        ...form,
+        title: form.title.trim(),
+        description: form.description.trim(),
+        assignedTo: form.assignedTo.trim(),
+        relatedCase: form.relatedCase.trim(),
+        dueDate: form.dueDate.trim(),
+        completed: false,
+      };
 
-    const assignedTo =
-      window.prompt(
-        'Edit assigned staff member',
-        task.assignedTo,
-      ) ?? task.assignedTo;
+      setTasks((currentTasks) => [
+        newTask,
+        ...currentTasks,
+      ]);
+    }
 
-    const relatedCase =
-      window.prompt(
-        'Edit related case reference',
-        task.relatedCase,
-      ) ?? task.relatedCase;
-
-    const dueDate =
-      window.prompt(
-        'Edit due date',
-        task.dueDate,
-      ) ?? task.dueDate;
-
-    const priorityInput =
-      window.prompt(
-        'Edit priority: High, Medium or Low',
-        task.priority,
-      ) ?? task.priority;
-
-    const normalizedPriority =
-      priorityInput.trim().toLowerCase();
-
-    const priority: TaskPriority =
-      normalizedPriority === 'high'
-        ? 'High'
-        : normalizedPriority === 'low'
-          ? 'Low'
-          : 'Medium';
-
-    setTasks((currentTasks) =>
-      currentTasks.map((currentTask) =>
-        currentTask.id === task.id
-          ? {
-              ...currentTask,
-              title: title.trim(),
-              description: description.trim(),
-              assignedTo: assignedTo.trim(),
-              relatedCase: relatedCase.trim(),
-              dueDate: dueDate.trim(),
-              priority,
-            }
-          : currentTask,
-      ),
-    );
+    closeForm();
   };
 
   const toggleTask = (id: number) => {
@@ -287,8 +310,8 @@ export function Tasks() {
 
         <button
           type="button"
-          onClick={addTask}
-          className="flex shrink-0 items-center gap-2 rounded-xl bg-green-600 px-4 py-3 font-semibold text-white shadow-sm transition hover:bg-green-700"
+          onClick={openAddForm}
+          className="flex shrink-0 items-center gap-2 rounded-xl bg-green-600 px-4 py-3 font-semibold text-white shadow-sm hover:bg-green-700"
         >
           <Plus className="h-5 w-5" />
           Add Task
@@ -297,7 +320,10 @@ export function Tasks() {
 
       <div className="mt-6 grid grid-cols-2 gap-3">
         <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-          <p className="text-sm text-gray-500">Open tasks</p>
+          <p className="text-sm text-gray-500">
+            Open tasks
+          </p>
+
           <p className="mt-1 text-2xl font-bold text-gray-900">
             {openTaskCount}
           </p>
@@ -307,6 +333,7 @@ export function Tasks() {
           <p className="text-sm text-gray-500">
             Completed
           </p>
+
           <p className="mt-1 text-2xl font-bold text-gray-900">
             {completedTaskCount}
           </p>
@@ -398,7 +425,7 @@ export function Tasks() {
                     <span className="font-medium text-gray-700">
                       Assigned to:
                     </span>{' '}
-                    {task.assignedTo}
+                    {task.assignedTo || 'Unassigned'}
                   </p>
 
                   <p>
@@ -420,7 +447,7 @@ export function Tasks() {
                 <div className="mt-4 flex justify-end gap-2">
                   <button
                     type="button"
-                    onClick={() => editTask(task)}
+                    onClick={() => openEditForm(task)}
                     className="flex items-center gap-1 rounded-lg px-3 py-2 text-sm font-medium text-blue-600 hover:bg-blue-50"
                   >
                     <Pencil className="h-4 w-4" />
@@ -447,6 +474,230 @@ export function Tasks() {
           </div>
         )}
       </div>
+
+      {isFormOpen && (
+        <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/50 sm:items-center sm:p-4">
+          <div className="max-h-[92vh] w-full overflow-y-auto rounded-t-3xl bg-white shadow-xl sm:max-w-2xl sm:rounded-3xl">
+            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-gray-200 bg-white px-5 py-4">
+              <div>
+                <h2 className="text-xl font-bold text-gray-900">
+                  {editingTaskId !== null
+                    ? 'Edit Task'
+                    : 'Add Task'}
+                </h2>
+
+                <p className="mt-1 text-sm text-gray-500">
+                  Enter the task details and assignment.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={closeForm}
+                className="rounded-full p-2 text-gray-500 hover:bg-gray-100"
+                aria-label="Close task form"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form
+              onSubmit={saveTask}
+              className="space-y-5 p-5"
+            >
+              <div>
+                <label
+                  htmlFor="task-title"
+                  className="mb-2 block text-sm font-semibold text-gray-700"
+                >
+                  Task title *
+                </label>
+
+                <input
+                  id="task-title"
+                  type="text"
+                  required
+                  value={form.title}
+                  onChange={(event) =>
+                    updateForm(
+                      'title',
+                      event.target.value,
+                    )
+                  }
+                  placeholder="Prepare legal notice"
+                  className="w-full rounded-xl border border-gray-300 px-4 py-3 outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100"
+                />
+              </div>
+
+              <div>
+                <label
+                  htmlFor="task-description"
+                  className="mb-2 block text-sm font-semibold text-gray-700"
+                >
+                  Description
+                </label>
+
+                <textarea
+                  id="task-description"
+                  rows={4}
+                  value={form.description}
+                  onChange={(event) =>
+                    updateForm(
+                      'description',
+                      event.target.value,
+                    )
+                  }
+                  placeholder="Describe the required work"
+                  className="w-full resize-none rounded-xl border border-gray-300 px-4 py-3 outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100"
+                />
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label
+                    htmlFor="task-assigned"
+                    className="mb-2 block text-sm font-semibold text-gray-700"
+                  >
+                    Assigned to
+                  </label>
+
+                  <input
+                    id="task-assigned"
+                    type="text"
+                    value={form.assignedTo}
+                    onChange={(event) =>
+                      updateForm(
+                        'assignedTo',
+                        event.target.value,
+                      )
+                    }
+                    placeholder="Staff member"
+                    className="w-full rounded-xl border border-gray-300 px-4 py-3 outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100"
+                  />
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="task-case"
+                    className="mb-2 block text-sm font-semibold text-gray-700"
+                  >
+                    Related case
+                  </label>
+
+                  {cases.length > 0 ? (
+                    <select
+                      id="task-case"
+                      value={form.relatedCase}
+                      onChange={(event) =>
+                        updateForm(
+                          'relatedCase',
+                          event.target.value,
+                        )
+                      }
+                      className="w-full rounded-xl border border-gray-300 bg-white px-4 py-3 outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100"
+                    >
+                      <option value="">
+                        No linked case
+                      </option>
+
+                      {cases.map((caseItem) => (
+                        <option
+                          key={caseItem.id}
+                          value={caseItem.reference}
+                        >
+                          {caseItem.reference} — {caseItem.title}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      id="task-case"
+                      type="text"
+                      value={form.relatedCase}
+                      onChange={(event) =>
+                        updateForm(
+                          'relatedCase',
+                          event.target.value,
+                        )
+                      }
+                      placeholder="Case reference"
+                      className="w-full rounded-xl border border-gray-300 px-4 py-3 outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100"
+                    />
+                  )}
+                </div>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label
+                    htmlFor="task-date"
+                    className="mb-2 block text-sm font-semibold text-gray-700"
+                  >
+                    Due date
+                  </label>
+
+                  <input
+                    id="task-date"
+                    type="date"
+                    value={form.dueDate}
+                    onChange={(event) =>
+                      updateForm(
+                        'dueDate',
+                        event.target.value,
+                      )
+                    }
+                    className="w-full rounded-xl border border-gray-300 px-4 py-3 outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100"
+                  />
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="task-priority"
+                    className="mb-2 block text-sm font-semibold text-gray-700"
+                  >
+                    Priority
+                  </label>
+
+                  <select
+                    id="task-priority"
+                    value={form.priority}
+                    onChange={(event) =>
+                      updateForm(
+                        'priority',
+                        event.target.value,
+                      )
+                    }
+                    className="w-full rounded-xl border border-gray-300 bg-white px-4 py-3 outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100"
+                  >
+                    <option value="High">High</option>
+                    <option value="Medium">Medium</option>
+                    <option value="Low">Low</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex gap-3 border-t border-gray-200 pt-5">
+                <button
+                  type="button"
+                  onClick={closeForm}
+                  className="flex-1 rounded-xl border border-gray-300 px-4 py-3 font-semibold text-gray-700 hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+
+                <button
+                  type="submit"
+                  className="flex-1 rounded-xl bg-green-600 px-4 py-3 font-semibold text-white hover:bg-green-700"
+                >
+                  {editingTaskId !== null
+                    ? 'Save Changes'
+                    : 'Save Task'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
