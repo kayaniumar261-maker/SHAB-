@@ -14,6 +14,7 @@ import { Clients } from './Pages/Clients';
 import { Cases } from './pages/Cases';
 import { Tasks } from './pages/Tasks';
 import { CalendarPage } from './pages/CalendarPage';
+import { AIAssistant } from './pages/AIAssistant';
 import { More } from './pages/More';
 import { Documents } from './pages/Documents';
 import { LegalNotices } from './pages/LegalNotices';
@@ -37,6 +38,11 @@ function App() {
             <Route path="/clients" element={<Clients />} />
 
             <Route path="/cases" element={<Cases />} />
+
+<Route
+  path="/ai-assistant"
+  element={<AIAssistant />}
+/>
 
             <Route path="/tasks" element={<Tasks />} />
 
