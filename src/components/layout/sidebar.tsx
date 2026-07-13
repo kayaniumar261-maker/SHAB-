@@ -7,6 +7,7 @@ import {
   DollarSign,
   File,
   FileText,
+  Gavel,
   LayoutDashboard,
   Scale,
   Settings,
@@ -43,6 +44,11 @@ const menuItems = [
     path: '/calendar',
     icon: Calendar,
     label: 'Calendar',
+  },
+  {
+    path: '/hearings',
+    icon: Gavel,
+    label: 'Hearings',
   },
   {
     path: '/payments',
@@ -90,8 +96,8 @@ export function Sidebar() {
   return (
     <aside className="fixed inset-y-0 hidden w-64 flex-col border-r border-gray-200 bg-white lg:flex">
       <div className="flex h-16 items-center gap-3 border-b border-gray-200 px-6">
-        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#1a2332]">
-          <Building2 className="h-5 w-5 text-white" />
+        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#111111]">
+          <Building2 className="h-5 w-5 text-[#C9A84C]" />
         </div>
 
         <div>
@@ -100,7 +106,7 @@ export function Sidebar() {
           </h1>
 
           <p className="text-[10px] text-gray-500">
-            Practice Manager
+            ERP Suite
           </p>
         </div>
       </div>
@@ -119,7 +125,7 @@ export function Sidebar() {
                   cn(
                     'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
                     isActive
-                      ? 'bg-[#c9a84c]/10 text-[#c9a84c]'
+                      ? 'bg-[#C9A84C]/10 text-[#B89536]'
                       : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900',
                   )
                 }
