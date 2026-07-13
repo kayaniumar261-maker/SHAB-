@@ -7,7 +7,7 @@ import {
 
 import { MobileNav } from './components/layout/MobileNav';
 import { Sidebar } from './components/layout/sidebar';
-
+import { Hearings } from './pages/Hearings';
 import { Dashboard } from './Pages/Dashboard';
 import { Clients } from './Pages/Clients';
 
@@ -45,7 +45,10 @@ function App() {
               path="/calendar"
               element={<CalendarPage />}
             />
-
+<Route
+  path="/hearings"
+  element={<Hearings />}
+/>
             <Route
               path="/documents"
               element={<Documents />}
