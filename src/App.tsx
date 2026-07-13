@@ -7,7 +7,7 @@ import {
 
 import { MobileNav } from './components/layout/MobileNav';
 import { Sidebar } from './components/layout/sidebar';
-import { Hearings } from './pages/Hearings';
+
 import { Dashboard } from './Pages/Dashboard';
 import { Clients } from './Pages/Clients';
 
@@ -15,6 +15,7 @@ import { AIAssistant } from './pages/AIAssistant';
 import { CalendarPage } from './pages/CalendarPage';
 import { Cases } from './pages/Cases';
 import { Documents } from './pages/Documents';
+import { Hearings } from './pages/Hearings';
 import { LegalNotices } from './pages/LegalNotices';
 import { More } from './pages/More';
 import { Notifications } from './pages/Notifications';
@@ -45,10 +46,12 @@ function App() {
               path="/calendar"
               element={<CalendarPage />}
             />
-<Route
-  path="/hearings"
-  element={<Hearings />}
-/>
+
+            <Route
+              path="/hearings"
+              element={<Hearings />}
+            />
+
             <Route
               path="/documents"
               element={<Documents />}
