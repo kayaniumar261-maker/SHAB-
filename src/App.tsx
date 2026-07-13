@@ -19,7 +19,7 @@ import { Documents } from './pages/Documents';
 import { LegalNotices } from './pages/LegalNotices';
 import { Notifications } from './pages/Notifications';
 import { Settings } from './pages/Settings';
-
+import { Staff } from './pages/Staff';
 function App() {
   return (
     <BrowserRouter basename="/SHAB-/">
