@@ -1,11 +1,14 @@
 import {
   Briefcase,
+  CalendarDays,
   Pencil,
   Plus,
   Search,
   Trash2,
+  X,
 } from 'lucide-react';
 import {
+  FormEvent,
   useEffect,
   useMemo,
   useState,
@@ -27,7 +30,28 @@ type CaseItem = {
   notes: string;
 };
 
+type CaseForm = Omit<CaseItem, 'id'>;
+
+type StoredClient = {
+  id: number;
+  name: string;
+};
+
 const CASES_STORAGE_KEY = 'shab-cases';
+const CLIENTS_STORAGE_KEY = 'shab-clients';
+
+const emptyForm: CaseForm = {
+  title: '',
+  client: '',
+  reference: '',
+  caseType: '',
+  court: '',
+  opponent: '',
+  assignedTo: '',
+  nextHearing: '',
+  status: 'Active',
+  notes: '',
+};
 
 const initialCases: CaseItem[] = [
   {
@@ -42,19 +66,6 @@ const initialCases: CaseItem[] = [
     nextHearing: '2026-07-20',
     status: 'Active',
     notes: 'Commercial payment recovery dispute.',
-  },
-  {
-    id: 2,
-    title: 'Labour Claim',
-    client: 'Mohammed Ali',
-    reference: 'SHAB-2026-002',
-    caseType: 'Labour',
-    court: 'MOHRE',
-    opponent: 'Previous Employer LLC',
-    assignedTo: 'Umar Kayani',
-    nextHearing: '2026-07-24',
-    status: 'Pending',
-    notes: 'Unpaid salary and end-of-service claim.',
   },
 ];
 
@@ -78,11 +89,47 @@ function loadCases(): CaseItem[] {
   }
 }
 
+function loadClients(): StoredClient[] {
+  try {
+    const savedClients = window.localStorage.getItem(
+      CLIENTS_STORAGE_KEY,
+    );
+
+    if (!savedClients) {
+      return [];
+    }
+
+    const parsedClients = JSON.parse(savedClients);
+
+    return Array.isArray(parsedClients)
+      ? parsedClients
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function generateReference(caseCount: number): string {
+  return `SHAB-${new Date().getFullYear()}-${String(
+    caseCount + 1,
+  ).padStart(3, '0')}`;
+}
+
 export function Cases() {
   const [cases, setCases] =
     useState<CaseItem[]>(loadCases);
 
+  const [clients, setClients] =
+    useState<StoredClient[]>(loadClients);
+
   const [searchTerm, setSearchTerm] = useState('');
+  const [isFormOpen, setIsFormOpen] = useState(false);
+
+  const [editingCaseId, setEditingCaseId] =
+    useState<number | null>(null);
+
+  const [form, setForm] =
+    useState<CaseForm>(emptyForm);
 
   useEffect(() => {
     window.localStorage.setItem(
@@ -90,6 +137,22 @@ export function Cases() {
       JSON.stringify(cases),
     );
   }, [cases]);
+
+  useEffect(() => {
+    const refreshClients = () => {
+      setClients(loadClients());
+    };
+
+    refreshClients();
+
+    window.addEventListener('focus', refreshClients);
+    window.addEventListener('storage', refreshClients);
+
+    return () => {
+      window.removeEventListener('focus', refreshClients);
+      window.removeEventListener('storage', refreshClients);
+    };
+  }, []);
 
   const filteredCases = useMemo(() => {
     const search = searchTerm.trim().toLowerCase();
@@ -116,159 +179,114 @@ export function Cases() {
     );
   }, [cases, searchTerm]);
 
-  const addCase = () => {
-    const title = window.prompt('Enter case title');
+  const openAddForm = () => {
+    setEditingCaseId(null);
 
-    if (!title?.trim()) {
-      return;
-    }
+    setForm({
+      ...emptyForm,
+      reference: generateReference(cases.length),
+      client: clients[0]?.name || '',
+      assignedTo: 'Umar Kayani',
+    });
 
-    const client =
-      window.prompt('Enter client name')?.trim() ||
-      'Unnamed Client';
-
-    const reference =
-      window.prompt('Enter case reference')?.trim() ||
-      `SHAB-${new Date().getFullYear()}-${String(
-        cases.length + 1,
-      ).padStart(3, '0')}`;
-
-    const caseType =
-      window.prompt('Enter case type')?.trim() ||
-      'General';
-
-    const court =
-      window.prompt('Enter court or authority')?.trim() ||
-      'Not specified';
-
-    const opponent =
-      window.prompt('Enter opponent name')?.trim() || '';
-
-    const assignedTo =
-      window.prompt('Enter assigned staff member')?.trim() ||
-      'Unassigned';
-
-    const nextHearing =
-      window.prompt(
-        'Enter next hearing date in YYYY-MM-DD format',
-      )?.trim() || '';
-
-    const notes =
-      window.prompt('Enter case notes')?.trim() || '';
-
-    const newCase: CaseItem = {
-      id: Date.now(),
-      title: title.trim(),
-      client,
-      reference,
-      caseType,
-      court,
-      opponent,
-      assignedTo,
-      nextHearing,
-      status: 'Active',
-      notes,
-    };
-
-    setCases((currentCases) => [
-      newCase,
-      ...currentCases,
-    ]);
+    setIsFormOpen(true);
   };
 
-  const editCase = (caseItem: CaseItem) => {
-    const title = window.prompt(
-      'Edit case title',
-      caseItem.title,
-    );
+  const openEditForm = (caseItem: CaseItem) => {
+    setEditingCaseId(caseItem.id);
 
-    if (!title?.trim()) {
+    setForm({
+      title: caseItem.title,
+      client: caseItem.client,
+      reference: caseItem.reference,
+      caseType: caseItem.caseType,
+      court: caseItem.court,
+      opponent: caseItem.opponent,
+      assignedTo: caseItem.assignedTo,
+      nextHearing: caseItem.nextHearing,
+      status: caseItem.status,
+      notes: caseItem.notes,
+    });
+
+    setIsFormOpen(true);
+  };
+
+  const closeForm = () => {
+    setIsFormOpen(false);
+    setEditingCaseId(null);
+    setForm(emptyForm);
+  };
+
+  const updateForm = (
+    field: keyof CaseForm,
+    value: string,
+  ) => {
+    setForm((currentForm) => ({
+      ...currentForm,
+      [field]: value,
+    }));
+  };
+
+  const saveCase = (event: FormEvent) => {
+    event.preventDefault();
+
+    if (!form.title.trim()) {
+      window.alert('Case title is required.');
       return;
     }
 
-    const client =
-      window.prompt(
-        'Edit client name',
-        caseItem.client,
-      ) ?? caseItem.client;
+    if (!form.client.trim()) {
+      window.alert('Please select or enter a client.');
+      return;
+    }
 
-    const reference =
-      window.prompt(
-        'Edit case reference',
-        caseItem.reference,
-      ) ?? caseItem.reference;
+    if (!form.reference.trim()) {
+      window.alert('Case reference is required.');
+      return;
+    }
 
-    const caseType =
-      window.prompt(
-        'Edit case type',
-        caseItem.caseType,
-      ) ?? caseItem.caseType;
+    if (editingCaseId !== null) {
+      setCases((currentCases) =>
+        currentCases.map((caseItem) =>
+          caseItem.id === editingCaseId
+            ? {
+                ...caseItem,
+                ...form,
+                title: form.title.trim(),
+                client: form.client.trim(),
+                reference: form.reference.trim(),
+                caseType: form.caseType.trim(),
+                court: form.court.trim(),
+                opponent: form.opponent.trim(),
+                assignedTo: form.assignedTo.trim(),
+                nextHearing: form.nextHearing.trim(),
+                notes: form.notes.trim(),
+              }
+            : caseItem,
+        ),
+      );
+    } else {
+      const newCase: CaseItem = {
+        id: Date.now(),
+        ...form,
+        title: form.title.trim(),
+        client: form.client.trim(),
+        reference: form.reference.trim(),
+        caseType: form.caseType.trim(),
+        court: form.court.trim(),
+        opponent: form.opponent.trim(),
+        assignedTo: form.assignedTo.trim(),
+        nextHearing: form.nextHearing.trim(),
+        notes: form.notes.trim(),
+      };
 
-    const court =
-      window.prompt(
-        'Edit court or authority',
-        caseItem.court,
-      ) ?? caseItem.court;
+      setCases((currentCases) => [
+        newCase,
+        ...currentCases,
+      ]);
+    }
 
-    const opponent =
-      window.prompt(
-        'Edit opponent name',
-        caseItem.opponent,
-      ) ?? caseItem.opponent;
-
-    const assignedTo =
-      window.prompt(
-        'Edit assigned staff member',
-        caseItem.assignedTo,
-      ) ?? caseItem.assignedTo;
-
-    const nextHearing =
-      window.prompt(
-        'Edit next hearing date',
-        caseItem.nextHearing,
-      ) ?? caseItem.nextHearing;
-
-    const statusInput =
-      window.prompt(
-        'Edit status: Active, Pending or Closed',
-        caseItem.status,
-      ) ?? caseItem.status;
-
-    const normalizedStatus =
-      statusInput.trim().toLowerCase();
-
-    const status: CaseStatus =
-      normalizedStatus === 'closed'
-        ? 'Closed'
-        : normalizedStatus === 'pending'
-          ? 'Pending'
-          : 'Active';
-
-    const notes =
-      window.prompt(
-        'Edit case notes',
-        caseItem.notes,
-      ) ?? caseItem.notes;
-
-    setCases((currentCases) =>
-      currentCases.map((currentCase) =>
-        currentCase.id === caseItem.id
-          ? {
-              ...currentCase,
-              title: title.trim(),
-              client: client.trim(),
-              reference: reference.trim(),
-              caseType: caseType.trim(),
-              court: court.trim(),
-              opponent: opponent.trim(),
-              assignedTo: assignedTo.trim(),
-              nextHearing: nextHearing.trim(),
-              status,
-              notes: notes.trim(),
-            }
-          : currentCase,
-      ),
-    );
+    closeForm();
   };
 
   const deleteCase = (id: number) => {
@@ -308,8 +326,8 @@ export function Cases() {
 
         <button
           type="button"
-          onClick={addCase}
-          className="flex shrink-0 items-center gap-2 rounded-xl bg-yellow-500 px-4 py-3 font-semibold text-white shadow-sm transition hover:bg-yellow-600"
+          onClick={openAddForm}
+          className="flex shrink-0 items-center gap-2 rounded-xl bg-purple-600 px-4 py-3 font-semibold text-white shadow-sm hover:bg-purple-700"
         >
           <Plus className="h-5 w-5" />
           Add Case
@@ -369,14 +387,14 @@ export function Cases() {
                 <span className="font-medium text-gray-700">
                   Case type:
                 </span>{' '}
-                {item.caseType}
+                {item.caseType || 'Not specified'}
               </p>
 
               <p>
                 <span className="font-medium text-gray-700">
                   Court:
                 </span>{' '}
-                {item.court}
+                {item.court || 'Not specified'}
               </p>
 
               <p>
@@ -390,14 +408,15 @@ export function Cases() {
                 <span className="font-medium text-gray-700">
                   Assigned to:
                 </span>{' '}
-                {item.assignedTo}
+                {item.assignedTo || 'Unassigned'}
               </p>
 
-              <p>
-                <span className="font-medium text-gray-700">
-                  Next hearing:
-                </span>{' '}
-                {item.nextHearing || 'Not scheduled'}
+              <p className="flex items-center gap-2">
+                <CalendarDays className="h-4 w-4 text-gray-400" />
+
+                <span>
+                  {item.nextHearing || 'No hearing scheduled'}
+                </span>
               </p>
             </div>
 
@@ -410,7 +429,7 @@ export function Cases() {
             <div className="mt-4 flex justify-end gap-2">
               <button
                 type="button"
-                onClick={() => editCase(item)}
+                onClick={() => openEditForm(item)}
                 className="flex items-center gap-1 rounded-lg px-3 py-2 text-sm font-medium text-blue-600 hover:bg-blue-50"
               >
                 <Pencil className="h-4 w-4" />
@@ -435,6 +454,326 @@ export function Cases() {
           </div>
         )}
       </div>
+
+      {isFormOpen && (
+        <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/50 sm:items-center sm:p-4">
+          <div className="max-h-[92vh] w-full overflow-y-auto rounded-t-3xl bg-white shadow-xl sm:max-w-3xl sm:rounded-3xl">
+            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-gray-200 bg-white px-5 py-4">
+              <div>
+                <h2 className="text-xl font-bold text-gray-900">
+                  {editingCaseId !== null
+                    ? 'Edit Case'
+                    : 'Add Case'}
+                </h2>
+
+                <p className="mt-1 text-sm text-gray-500">
+                  Enter the complete legal matter details.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={closeForm}
+                className="rounded-full p-2 text-gray-500 hover:bg-gray-100"
+                aria-label="Close case form"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form
+              onSubmit={saveCase}
+              className="space-y-5 p-5"
+            >
+              <div>
+                <label
+                  htmlFor="case-title"
+                  className="mb-2 block text-sm font-semibold text-gray-700"
+                >
+                  Case title *
+                </label>
+
+                <input
+                  id="case-title"
+                  type="text"
+                  required
+                  value={form.title}
+                  onChange={(event) =>
+                    updateForm('title', event.target.value)
+                  }
+                  placeholder="Commercial dispute"
+                  className="w-full rounded-xl border border-gray-300 px-4 py-3 outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-100"
+                />
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label
+                    htmlFor="case-client"
+                    className="mb-2 block text-sm font-semibold text-gray-700"
+                  >
+                    Client *
+                  </label>
+
+                  {clients.length > 0 ? (
+                    <select
+                      id="case-client"
+                      required
+                      value={form.client}
+                      onChange={(event) =>
+                        updateForm(
+                          'client',
+                          event.target.value,
+                        )
+                      }
+                      className="w-full rounded-xl border border-gray-300 bg-white px-4 py-3 outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-100"
+                    >
+                      <option value="">
+                        Select a client
+                      </option>
+
+                      {clients.map((client) => (
+                        <option
+                          key={client.id}
+                          value={client.name}
+                        >
+                          {client.name}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      id="case-client"
+                      type="text"
+                      required
+                      value={form.client}
+                      onChange={(event) =>
+                        updateForm(
+                          'client',
+                          event.target.value,
+                        )
+                      }
+                      placeholder="Client name"
+                      className="w-full rounded-xl border border-gray-300 px-4 py-3 outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-100"
+                    />
+                  )}
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="case-reference"
+                    className="mb-2 block text-sm font-semibold text-gray-700"
+                  >
+                    Case reference *
+                  </label>
+
+                  <input
+                    id="case-reference"
+                    type="text"
+                    required
+                    value={form.reference}
+                    onChange={(event) =>
+                      updateForm(
+                        'reference',
+                        event.target.value,
+                      )
+                    }
+                    placeholder="SHAB-2026-001"
+                    className="w-full rounded-xl border border-gray-300 px-4 py-3 outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-100"
+                  />
+                </div>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label
+                    htmlFor="case-type"
+                    className="mb-2 block text-sm font-semibold text-gray-700"
+                  >
+                    Case type
+                  </label>
+
+                  <input
+                    id="case-type"
+                    type="text"
+                    value={form.caseType}
+                    onChange={(event) =>
+                      updateForm(
+                        'caseType',
+                        event.target.value,
+                      )
+                    }
+                    placeholder="Civil, Labour, Criminal..."
+                    className="w-full rounded-xl border border-gray-300 px-4 py-3 outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-100"
+                  />
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="case-court"
+                    className="mb-2 block text-sm font-semibold text-gray-700"
+                  >
+                    Court or authority
+                  </label>
+
+                  <input
+                    id="case-court"
+                    type="text"
+                    value={form.court}
+                    onChange={(event) =>
+                      updateForm(
+                        'court',
+                        event.target.value,
+                      )
+                    }
+                    placeholder="Dubai Courts"
+                    className="w-full rounded-xl border border-gray-300 px-4 py-3 outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-100"
+                  />
+                </div>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label
+                    htmlFor="case-opponent"
+                    className="mb-2 block text-sm font-semibold text-gray-700"
+                  >
+                    Opponent
+                  </label>
+
+                  <input
+                    id="case-opponent"
+                    type="text"
+                    value={form.opponent}
+                    onChange={(event) =>
+                      updateForm(
+                        'opponent',
+                        event.target.value,
+                      )
+                    }
+                    placeholder="Opponent name"
+                    className="w-full rounded-xl border border-gray-300 px-4 py-3 outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-100"
+                  />
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="case-assigned"
+                    className="mb-2 block text-sm font-semibold text-gray-700"
+                  >
+                    Assigned to
+                  </label>
+
+                  <input
+                    id="case-assigned"
+                    type="text"
+                    value={form.assignedTo}
+                    onChange={(event) =>
+                      updateForm(
+                        'assignedTo',
+                        event.target.value,
+                      )
+                    }
+                    placeholder="Staff member"
+                    className="w-full rounded-xl border border-gray-300 px-4 py-3 outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-100"
+                  />
+                </div>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label
+                    htmlFor="case-hearing"
+                    className="mb-2 block text-sm font-semibold text-gray-700"
+                  >
+                    Next hearing
+                  </label>
+
+                  <input
+                    id="case-hearing"
+                    type="date"
+                    value={form.nextHearing}
+                    onChange={(event) =>
+                      updateForm(
+                        'nextHearing',
+                        event.target.value,
+                      )
+                    }
+                    className="w-full rounded-xl border border-gray-300 px-4 py-3 outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-100"
+                  />
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="case-status"
+                    className="mb-2 block text-sm font-semibold text-gray-700"
+                  >
+                    Status
+                  </label>
+
+                  <select
+                    id="case-status"
+                    value={form.status}
+                    onChange={(event) =>
+                      updateForm(
+                        'status',
+                        event.target.value,
+                      )
+                    }
+                    className="w-full rounded-xl border border-gray-300 bg-white px-4 py-3 outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-100"
+                  >
+                    <option value="Active">Active</option>
+                    <option value="Pending">Pending</option>
+                    <option value="Closed">Closed</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label
+                  htmlFor="case-notes"
+                  className="mb-2 block text-sm font-semibold text-gray-700"
+                >
+                  Notes
+                </label>
+
+                <textarea
+                  id="case-notes"
+                  rows={4}
+                  value={form.notes}
+                  onChange={(event) =>
+                    updateForm(
+                      'notes',
+                      event.target.value,
+                    )
+                  }
+                  placeholder="Case background, next steps and internal notes"
+                  className="w-full resize-none rounded-xl border border-gray-300 px-4 py-3 outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-100"
+                />
+              </div>
+
+              <div className="flex gap-3 border-t border-gray-200 pt-5">
+                <button
+                  type="button"
+                  onClick={closeForm}
+                  className="flex-1 rounded-xl border border-gray-300 px-4 py-3 font-semibold text-gray-700 hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+
+                <button
+                  type="submit"
+                  className="flex-1 rounded-xl bg-purple-600 px-4 py-3 font-semibold text-white hover:bg-purple-700"
+                >
+                  {editingCaseId !== null
+                    ? 'Save Changes'
+                    : 'Save Case'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
