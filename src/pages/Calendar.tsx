@@ -6,8 +6,10 @@ import {
   Plus,
   Search,
   Trash2,
+  X,
 } from 'lucide-react';
 import {
+  FormEvent,
   useEffect,
   useMemo,
   useState,
@@ -32,7 +34,28 @@ type CalendarEvent = {
   notes: string;
 };
 
+type EventForm = Omit<CalendarEvent, 'id'>;
+
+type StoredCase = {
+  id: number;
+  title: string;
+  reference: string;
+};
+
 const CALENDAR_STORAGE_KEY = 'shab-calendar-events';
+const CASES_STORAGE_KEY = 'shab-cases';
+
+const emptyForm: EventForm = {
+  title: '',
+  eventType: 'Hearing',
+  date: '',
+  time: '',
+  court: '',
+  location: '',
+  relatedCase: '',
+  assignedTo: '',
+  notes: '',
+};
 
 const initialEvents: CalendarEvent[] = [
   {
@@ -46,18 +69,6 @@ const initialEvents: CalendarEvent[] = [
     relatedCase: 'SHAB-2026-001',
     assignedTo: 'Umar Kayani',
     notes: 'Carry the complete case file and original documents.',
-  },
-  {
-    id: 2,
-    title: 'Client Consultation',
-    eventType: 'Meeting',
-    date: '2026-07-22',
-    time: '14:30',
-    court: '',
-    location: 'SHAB Office',
-    relatedCase: '',
-    assignedTo: 'Nourhan',
-    notes: 'Initial consultation regarding a labour dispute.',
   },
 ];
 
@@ -81,29 +92,41 @@ function loadEvents(): CalendarEvent[] {
   }
 }
 
-function normalizeEventType(value: string): EventType {
-  const normalizedValue = value.trim().toLowerCase();
+function loadCases(): StoredCase[] {
+  try {
+    const savedCases = window.localStorage.getItem(
+      CASES_STORAGE_KEY,
+    );
 
-  if (normalizedValue === 'meeting') {
-    return 'Meeting';
+    if (!savedCases) {
+      return [];
+    }
+
+    const parsedCases = JSON.parse(savedCases);
+
+    return Array.isArray(parsedCases)
+      ? parsedCases
+      : [];
+  } catch {
+    return [];
   }
-
-  if (normalizedValue === 'deadline') {
-    return 'Deadline';
-  }
-
-  if (normalizedValue === 'reminder') {
-    return 'Reminder';
-  }
-
-  return 'Hearing';
 }
 
 export function CalendarPage() {
   const [events, setEvents] =
     useState<CalendarEvent[]>(loadEvents);
 
+  const [cases, setCases] =
+    useState<StoredCase[]>(loadCases);
+
   const [searchTerm, setSearchTerm] = useState('');
+  const [isFormOpen, setIsFormOpen] = useState(false);
+
+  const [editingEventId, setEditingEventId] =
+    useState<number | null>(null);
+
+  const [form, setForm] =
+    useState<EventForm>(emptyForm);
 
   useEffect(() => {
     window.localStorage.setItem(
@@ -112,15 +135,38 @@ export function CalendarPage() {
     );
   }, [events]);
 
+  useEffect(() => {
+    const refreshCases = () => {
+      setCases(loadCases());
+    };
+
+    refreshCases();
+
+    window.addEventListener('focus', refreshCases);
+    window.addEventListener('storage', refreshCases);
+
+    return () => {
+      window.removeEventListener('focus', refreshCases);
+      window.removeEventListener('storage', refreshCases);
+    };
+  }, []);
+
   const filteredEvents = useMemo(() => {
     const search = searchTerm.trim().toLowerCase();
 
-    const sortedEvents = [...events].sort((first, second) => {
-      const firstDate = `${first.date}T${first.time || '00:00'}`;
-      const secondDate = `${second.date}T${second.time || '00:00'}`;
+    const sortedEvents = [...events].sort(
+      (firstEvent, secondEvent) => {
+        const firstDateTime = `${firstEvent.date}T${
+          firstEvent.time || '00:00'
+        }`;
 
-      return firstDate.localeCompare(secondDate);
-    });
+        const secondDateTime = `${secondEvent.date}T${
+          secondEvent.time || '00:00'
+        }`;
+
+        return firstDateTime.localeCompare(secondDateTime);
+      },
+    );
 
     if (!search) {
       return sortedEvents;
@@ -144,147 +190,101 @@ export function CalendarPage() {
     );
   }, [events, searchTerm]);
 
-  const addEvent = () => {
-    const title = window.prompt('Enter event title');
+  const openAddForm = () => {
+    setEditingEventId(null);
 
-    if (!title?.trim()) {
-      return;
-    }
+    setForm({
+      ...emptyForm,
+      assignedTo: 'Umar Kayani',
+      relatedCase: cases[0]?.reference || '',
+    });
 
-    const eventTypeInput =
-      window.prompt(
-        'Enter event type: Hearing, Meeting, Deadline or Reminder',
-      ) || 'Hearing';
-
-    const date =
-      window.prompt(
-        'Enter date in YYYY-MM-DD format',
-      )?.trim() || '';
-
-    if (!date) {
-      window.alert('A date is required.');
-      return;
-    }
-
-    const time =
-      window.prompt(
-        'Enter time in HH:MM format',
-      )?.trim() || '';
-
-    const court =
-      window.prompt('Enter court or authority')?.trim() || '';
-
-    const location =
-      window.prompt('Enter location')?.trim() || '';
-
-    const relatedCase =
-      window.prompt(
-        'Enter related case reference',
-      )?.trim() || '';
-
-    const assignedTo =
-      window.prompt(
-        'Enter assigned staff member',
-      )?.trim() || 'Unassigned';
-
-    const notes =
-      window.prompt('Enter notes')?.trim() || '';
-
-    const newEvent: CalendarEvent = {
-      id: Date.now(),
-      title: title.trim(),
-      eventType: normalizeEventType(eventTypeInput),
-      date,
-      time,
-      court,
-      location,
-      relatedCase,
-      assignedTo,
-      notes,
-    };
-
-    setEvents((currentEvents) => [
-      ...currentEvents,
-      newEvent,
-    ]);
+    setIsFormOpen(true);
   };
 
-  const editEvent = (event: CalendarEvent) => {
-    const title = window.prompt(
-      'Edit event title',
-      event.title,
-    );
+  const openEditForm = (event: CalendarEvent) => {
+    setEditingEventId(event.id);
 
-    if (!title?.trim()) {
+    setForm({
+      title: event.title,
+      eventType: event.eventType,
+      date: event.date,
+      time: event.time,
+      court: event.court,
+      location: event.location,
+      relatedCase: event.relatedCase,
+      assignedTo: event.assignedTo,
+      notes: event.notes,
+    });
+
+    setIsFormOpen(true);
+  };
+
+  const closeForm = () => {
+    setIsFormOpen(false);
+    setEditingEventId(null);
+    setForm(emptyForm);
+  };
+
+  const updateForm = <K extends keyof EventForm>(
+    field: K,
+    value: EventForm[K],
+  ) => {
+    setForm((currentForm) => ({
+      ...currentForm,
+      [field]: value,
+    }));
+  };
+
+  const saveEvent = (submitEvent: FormEvent) => {
+    submitEvent.preventDefault();
+
+    if (!form.title.trim()) {
+      window.alert('Event title is required.');
       return;
     }
 
-    const eventTypeInput =
-      window.prompt(
-        'Edit event type: Hearing, Meeting, Deadline or Reminder',
-        event.eventType,
-      ) || event.eventType;
+    if (!form.date) {
+      window.alert('Event date is required.');
+      return;
+    }
 
-    const date =
-      window.prompt(
-        'Edit date',
-        event.date,
-      ) ?? event.date;
+    if (editingEventId !== null) {
+      setEvents((currentEvents) =>
+        currentEvents.map((event) =>
+          event.id === editingEventId
+            ? {
+                ...event,
+                ...form,
+                title: form.title.trim(),
+                court: form.court.trim(),
+                location: form.location.trim(),
+                relatedCase: form.relatedCase.trim(),
+                assignedTo: form.assignedTo.trim(),
+                notes: form.notes.trim(),
+              }
+            : event,
+        ),
+      );
+    } else {
+      const newEvent: CalendarEvent = {
+        id: Date.now(),
+        ...form,
+        title: form.title.trim(),
+        court: form.court.trim(),
+        location: form.location.trim(),
+        relatedCase: form.relatedCase.trim(),
+        assignedTo: form.assignedTo.trim(),
+        notes: form.notes.trim(),
+      };
 
-    const time =
-      window.prompt(
-        'Edit time',
-        event.time,
-      ) ?? event.time;
+      setEvents((currentEvents) => [
+        newEvent,
+        ...currentEvents,
+      ]);
+    }
 
-    const court =
-      window.prompt(
-        'Edit court or authority',
-        event.court,
-      ) ?? event.court;
-
-    const location =
-      window.prompt(
-        'Edit location',
-        event.location,
-      ) ?? event.location;
-
-    const relatedCase =
-      window.prompt(
-        'Edit related case reference',
-        event.relatedCase,
-      ) ?? event.relatedCase;
-
-    const assignedTo =
-      window.prompt(
-        'Edit assigned staff member',
-        event.assignedTo,
-      ) ?? event.assignedTo;
-
-    const notes =
-      window.prompt(
-        'Edit notes',
-        event.notes,
-      ) ?? event.notes;
-
-    setEvents((currentEvents) =>
-      currentEvents.map((currentEvent) =>
-        currentEvent.id === event.id
-          ? {
-              ...currentEvent,
-              title: title.trim(),
-              eventType: normalizeEventType(eventTypeInput),
-              date: date.trim(),
-              time: time.trim(),
-              court: court.trim(),
-              location: location.trim(),
-              relatedCase: relatedCase.trim(),
-              assignedTo: assignedTo.trim(),
-              notes: notes.trim(),
-            }
-          : currentEvent,
-      ),
-    );
+    closeForm();
   };
 
   const deleteEvent = (id: number) => {
@@ -323,8 +323,8 @@ export function CalendarPage() {
 
         <button
           type="button"
-          onClick={addEvent}
-          className="flex shrink-0 items-center gap-2 rounded-xl bg-orange-500 px-4 py-3 font-semibold text-white shadow-sm transition hover:bg-orange-600"
+          onClick={openAddForm}
+          className="flex shrink-0 items-center gap-2 rounded-xl bg-orange-500 px-4 py-3 font-semibold text-white shadow-sm hover:bg-orange-600"
         >
           <Plus className="h-5 w-5" />
           Add Event
@@ -364,7 +364,9 @@ export function CalendarPage() {
                     </h2>
 
                     <span
-                      className={`mt-2 inline-flex rounded-full px-3 py-1 text-xs font-semibold ${eventTypeClasses[event.eventType]}`}
+                      className={`mt-2 inline-flex rounded-full px-3 py-1 text-xs font-semibold ${
+                        eventTypeClasses[event.eventType]
+                      }`}
                     >
                       {event.eventType}
                     </span>
@@ -373,7 +375,7 @@ export function CalendarPage() {
                   <div className="flex gap-1">
                     <button
                       type="button"
-                      onClick={() => editEvent(event)}
+                      onClick={() => openEditForm(event)}
                       className="rounded-lg p-2 text-blue-600 hover:bg-blue-50"
                       aria-label="Edit event"
                     >
@@ -399,7 +401,9 @@ export function CalendarPage() {
 
                   <p className="flex items-center gap-2">
                     <Clock3 className="h-4 w-4 text-gray-400" />
-                    <span>{event.time || 'Time not set'}</span>
+                    <span>
+                      {event.time || 'Time not set'}
+                    </span>
                   </p>
 
                   <p className="flex items-center gap-2">
@@ -427,7 +431,7 @@ export function CalendarPage() {
                     <span className="font-medium text-gray-700">
                       Assigned to:
                     </span>{' '}
-                    {event.assignedTo}
+                    {event.assignedTo || 'Unassigned'}
                   </p>
                 </div>
 
@@ -447,6 +451,285 @@ export function CalendarPage() {
           </div>
         )}
       </div>
+
+      {isFormOpen && (
+        <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/50 sm:items-center sm:p-4">
+          <div className="max-h-[92vh] w-full overflow-y-auto rounded-t-3xl bg-white shadow-xl sm:max-w-3xl sm:rounded-3xl">
+            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-gray-200 bg-white px-5 py-4">
+              <div>
+                <h2 className="text-xl font-bold text-gray-900">
+                  {editingEventId !== null
+                    ? 'Edit Event'
+                    : 'Add Event'}
+                </h2>
+
+                <p className="mt-1 text-sm text-gray-500">
+                  Enter the hearing, meeting or deadline details.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={closeForm}
+                className="rounded-full p-2 text-gray-500 hover:bg-gray-100"
+                aria-label="Close calendar form"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form
+              onSubmit={saveEvent}
+              className="space-y-5 p-5"
+            >
+              <div>
+                <label
+                  htmlFor="event-title"
+                  className="mb-2 block text-sm font-semibold text-gray-700"
+                >
+                  Event title *
+                </label>
+
+                <input
+                  id="event-title"
+                  type="text"
+                  required
+                  value={form.title}
+                  onChange={(event) =>
+                    updateForm('title', event.target.value)
+                  }
+                  placeholder="Case management hearing"
+                  className="w-full rounded-xl border border-gray-300 px-4 py-3 outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
+                />
+              </div>
+
+              <div>
+                <label
+                  htmlFor="event-type"
+                  className="mb-2 block text-sm font-semibold text-gray-700"
+                >
+                  Event type
+                </label>
+
+                <select
+                  id="event-type"
+                  value={form.eventType}
+                  onChange={(event) =>
+                    updateForm(
+                      'eventType',
+                      event.target.value as EventType,
+                    )
+                  }
+                  className="w-full rounded-xl border border-gray-300 bg-white px-4 py-3 outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
+                >
+                  <option value="Hearing">Hearing</option>
+                  <option value="Meeting">Meeting</option>
+                  <option value="Deadline">Deadline</option>
+                  <option value="Reminder">Reminder</option>
+                </select>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label
+                    htmlFor="event-date"
+                    className="mb-2 block text-sm font-semibold text-gray-700"
+                  >
+                    Date *
+                  </label>
+
+                  <input
+                    id="event-date"
+                    type="date"
+                    required
+                    value={form.date}
+                    onChange={(event) =>
+                      updateForm('date', event.target.value)
+                    }
+                    className="w-full rounded-xl border border-gray-300 px-4 py-3 outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
+                  />
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="event-time"
+                    className="mb-2 block text-sm font-semibold text-gray-700"
+                  >
+                    Time
+                  </label>
+
+                  <input
+                    id="event-time"
+                    type="time"
+                    value={form.time}
+                    onChange={(event) =>
+                      updateForm('time', event.target.value)
+                    }
+                    className="w-full rounded-xl border border-gray-300 px-4 py-3 outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label
+                  htmlFor="event-case"
+                  className="mb-2 block text-sm font-semibold text-gray-700"
+                >
+                  Related case
+                </label>
+
+                {cases.length > 0 ? (
+                  <select
+                    id="event-case"
+                    value={form.relatedCase}
+                    onChange={(event) =>
+                      updateForm(
+                        'relatedCase',
+                        event.target.value,
+                      )
+                    }
+                    className="w-full rounded-xl border border-gray-300 bg-white px-4 py-3 outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
+                  >
+                    <option value="">
+                      No linked case
+                    </option>
+
+                    {cases.map((caseItem) => (
+                      <option
+                        key={caseItem.id}
+                        value={caseItem.reference}
+                      >
+                        {caseItem.reference} — {caseItem.title}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    id="event-case"
+                    type="text"
+                    value={form.relatedCase}
+                    onChange={(event) =>
+                      updateForm(
+                        'relatedCase',
+                        event.target.value,
+                      )
+                    }
+                    placeholder="Case reference"
+                    className="w-full rounded-xl border border-gray-300 px-4 py-3 outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
+                  />
+                )}
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label
+                    htmlFor="event-court"
+                    className="mb-2 block text-sm font-semibold text-gray-700"
+                  >
+                    Court or authority
+                  </label>
+
+                  <input
+                    id="event-court"
+                    type="text"
+                    value={form.court}
+                    onChange={(event) =>
+                      updateForm('court', event.target.value)
+                    }
+                    placeholder="Dubai Courts"
+                    className="w-full rounded-xl border border-gray-300 px-4 py-3 outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
+                  />
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="event-location"
+                    className="mb-2 block text-sm font-semibold text-gray-700"
+                  >
+                    Location
+                  </label>
+
+                  <input
+                    id="event-location"
+                    type="text"
+                    value={form.location}
+                    onChange={(event) =>
+                      updateForm(
+                        'location',
+                        event.target.value,
+                      )
+                    }
+                    placeholder="Court room or meeting location"
+                    className="w-full rounded-xl border border-gray-300 px-4 py-3 outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label
+                  htmlFor="event-assigned"
+                  className="mb-2 block text-sm font-semibold text-gray-700"
+                >
+                  Assigned to
+                </label>
+
+                <input
+                  id="event-assigned"
+                  type="text"
+                  value={form.assignedTo}
+                  onChange={(event) =>
+                    updateForm(
+                      'assignedTo',
+                      event.target.value,
+                    )
+                  }
+                  placeholder="Staff member"
+                  className="w-full rounded-xl border border-gray-300 px-4 py-3 outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
+                />
+              </div>
+
+              <div>
+                <label
+                  htmlFor="event-notes"
+                  className="mb-2 block text-sm font-semibold text-gray-700"
+                >
+                  Notes
+                </label>
+
+                <textarea
+                  id="event-notes"
+                  rows={4}
+                  value={form.notes}
+                  onChange={(event) =>
+                    updateForm('notes', event.target.value)
+                  }
+                  placeholder="Documents required, reminders or attendance instructions"
+                  className="w-full resize-none rounded-xl border border-gray-300 px-4 py-3 outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
+                />
+              </div>
+
+              <div className="flex gap-3 border-t border-gray-200 pt-5">
+                <button
+                  type="button"
+                  onClick={closeForm}
+                  className="flex-1 rounded-xl border border-gray-300 px-4 py-3 font-semibold text-gray-700 hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+
+                <button
+                  type="submit"
+                  className="flex-1 rounded-xl bg-orange-500 px-4 py-3 font-semibold text-white hover:bg-orange-600"
+                >
+                  {editingEventId !== null
+                    ? 'Save Changes'
+                    : 'Save Event'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
