@@ -1,7 +1,9 @@
 import {
+  AlertTriangle,
   CalendarClock,
   CheckCircle2,
   Clock3,
+  FileText,
   Gavel,
   MapPin,
   Pencil,
@@ -39,6 +41,11 @@ type HearingType =
   | 'Execution'
   | 'Other';
 
+type HearingPriority =
+  | 'High'
+  | 'Medium'
+  | 'Low';
+
 type StoredCase = {
   id: number;
   title: string;
@@ -54,6 +61,17 @@ type StoredStaff = {
   name: string;
   role?: string;
   status?: string;
+};
+
+type CalendarEvent = {
+  id: number;
+  title: string;
+  eventType: string;
+  date: string;
+  time: string;
+  court: string;
+  location: string;
+  relatedCase: string;
 };
 
 type HearingRecord = {
@@ -73,11 +91,15 @@ type HearingRecord = {
   judgeName: string;
   assignedLawyer: string;
   status: HearingStatus;
+  priority: HearingPriority;
   outcome: string;
   nextHearingDate: string;
   nextHearingTime: string;
   notes: string;
   reminderDays: number;
+  orderFileName: string;
+  orderFileType: string;
+  orderFileDataUrl: string;
   createdAt: string;
   updatedAt: string;
 };
@@ -98,28 +120,22 @@ type HearingForm = {
   judgeName: string;
   assignedLawyer: string;
   status: HearingStatus;
+  priority: HearingPriority;
   outcome: string;
   nextHearingDate: string;
   nextHearingTime: string;
   notes: string;
   reminderDays: string;
-};
-
-type CalendarEvent = {
-  id: number;
-  title: string;
-  eventType: string;
-  date: string;
-  time: string;
-  court: string;
-  location: string;
-  relatedCase: string;
+  orderFileName: string;
+  orderFileType: string;
+  orderFileDataUrl: string;
 };
 
 const HEARINGS_STORAGE_KEY = 'shab-hearings';
 const CASES_STORAGE_KEY = 'shab-cases';
 const STAFF_STORAGE_KEY = 'shab-staff';
 const CALENDAR_STORAGE_KEY = 'shab-calendar-events';
+const MAX_FILE_SIZE = 2 * 1024 * 1024;
 
 const emptyForm: HearingForm = {
   title: '',
@@ -137,16 +153,21 @@ const emptyForm: HearingForm = {
   judgeName: '',
   assignedLawyer: '',
   status: 'Upcoming',
+  priority: 'Medium',
   outcome: '',
   nextHearingDate: '',
   nextHearingTime: '',
   notes: '',
   reminderDays: '2',
+  orderFileName: '',
+  orderFileType: '',
+  orderFileDataUrl: '',
 };
 
 function loadArray<T>(key: string): T[] {
   try {
-    const savedValue = window.localStorage.getItem(key);
+    const savedValue =
+      window.localStorage.getItem(key);
 
     if (!savedValue) {
       return [];
@@ -154,30 +175,44 @@ function loadArray<T>(key: string): T[] {
 
     const parsedValue = JSON.parse(savedValue);
 
-    return Array.isArray(parsedValue) ? parsedValue : [];
+    return Array.isArray(parsedValue)
+      ? parsedValue
+      : [];
   } catch {
     return [];
   }
 }
 
 function loadHearings(): HearingRecord[] {
-  return loadArray<HearingRecord>(HEARINGS_STORAGE_KEY);
+  return loadArray<HearingRecord>(
+    HEARINGS_STORAGE_KEY,
+  );
 }
 
 function loadCases(): StoredCase[] {
-  return loadArray<StoredCase>(CASES_STORAGE_KEY);
+  return loadArray<StoredCase>(
+    CASES_STORAGE_KEY,
+  );
 }
 
 function loadStaff(): StoredStaff[] {
-  return loadArray<StoredStaff>(STAFF_STORAGE_KEY);
+  return loadArray<StoredStaff>(
+    STAFF_STORAGE_KEY,
+  );
 }
 
 function getLocalDate(): string {
   const date = new Date();
 
   const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
+
+  const month = String(
+    date.getMonth() + 1,
+  ).padStart(2, '0');
+
+  const day = String(
+    date.getDate(),
+  ).padStart(2, '0');
 
   return `${year}-${month}-${day}`;
 }
@@ -187,7 +222,9 @@ function formatDate(value: string): string {
     return 'Not scheduled';
   }
 
-  const date = new Date(`${value}T00:00:00`);
+  const date = new Date(
+    `${value}T00:00:00`,
+  );
 
   if (Number.isNaN(date.getTime())) {
     return value;
@@ -200,30 +237,66 @@ function formatDate(value: string): string {
   });
 }
 
-function getDaysDifference(dateValue: string): number {
+function formatTime(value: string): string {
+  if (!value) {
+    return 'Not recorded';
+  }
+
+  const [hours, minutes] = value.split(':');
+
+  const date = new Date();
+
+  date.setHours(
+    Number.parseInt(hours, 10),
+    Number.parseInt(minutes, 10),
+    0,
+    0,
+  );
+
+  return date.toLocaleTimeString('en-AE', {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function getDaysDifference(
+  dateValue: string,
+): number {
   if (!dateValue) {
     return 0;
   }
 
-  const today = new Date(`${getLocalDate()}T00:00:00`);
-  const target = new Date(`${dateValue}T00:00:00`);
+  const today = new Date(
+    `${getLocalDate()}T00:00:00`,
+  );
+
+  const targetDate = new Date(
+    `${dateValue}T00:00:00`,
+  );
 
   return Math.ceil(
-    (target.getTime() - today.getTime()) /
+    (targetDate.getTime() -
+      today.getTime()) /
       (1000 * 60 * 60 * 24),
   );
 }
 
-function getDateDescription(dateValue: string): string {
+function getDateDescription(
+  dateValue: string,
+): string {
   if (!dateValue) {
     return 'Not scheduled';
   }
 
-  const difference = getDaysDifference(dateValue);
+  const difference =
+    getDaysDifference(dateValue);
 
   if (difference < 0) {
-    return `${Math.abs(difference)} day${
-      Math.abs(difference) === 1 ? '' : 's'
+    const absoluteDifference =
+      Math.abs(difference);
+
+    return `${absoluteDifference} day${
+      absoluteDifference === 1 ? '' : 's'
     } ago`;
   }
 
@@ -238,10 +311,13 @@ function getDateDescription(dateValue: string): string {
   return `In ${difference} days`;
 }
 
-function saveCalendarEvent(hearing: HearingRecord) {
-  const currentEvents = loadArray<CalendarEvent>(
-    CALENDAR_STORAGE_KEY,
-  );
+function saveCalendarEvent(
+  hearing: HearingRecord,
+) {
+  const currentEvents =
+    loadArray<CalendarEvent>(
+      CALENDAR_STORAGE_KEY,
+    );
 
   const calendarEvent: CalendarEvent = {
     id: hearing.id,
@@ -254,12 +330,14 @@ function saveCalendarEvent(hearing: HearingRecord) {
     relatedCase: hearing.relatedCase,
   };
 
-  const existingIndex = currentEvents.findIndex(
-    (event) => event.id === hearing.id,
-  );
+  const existingIndex =
+    currentEvents.findIndex(
+      (event) => event.id === hearing.id,
+    );
 
   if (existingIndex >= 0) {
-    currentEvents[existingIndex] = calendarEvent;
+    currentEvents[existingIndex] =
+      calendarEvent;
   } else {
     currentEvents.push(calendarEvent);
   }
@@ -271,13 +349,15 @@ function saveCalendarEvent(hearing: HearingRecord) {
 }
 
 function removeCalendarEvent(id: number) {
-  const currentEvents = loadArray<CalendarEvent>(
-    CALENDAR_STORAGE_KEY,
-  );
+  const currentEvents =
+    loadArray<CalendarEvent>(
+      CALENDAR_STORAGE_KEY,
+    );
 
-  const updatedEvents = currentEvents.filter(
-    (event) => event.id !== id,
-  );
+  const updatedEvents =
+    currentEvents.filter(
+      (event) => event.id !== id,
+    );
 
   window.localStorage.setItem(
     CALENDAR_STORAGE_KEY,
@@ -285,9 +365,38 @@ function removeCalendarEvent(id: number) {
   );
 }
 
+function downloadOrderFile(
+  hearing: HearingRecord,
+) {
+  if (!hearing.orderFileDataUrl) {
+    window.alert(
+      'No hearing order has been uploaded.',
+    );
+
+    return;
+  }
+
+  const link =
+    window.document.createElement('a');
+
+  link.href = hearing.orderFileDataUrl;
+
+  link.download =
+    hearing.orderFileName ||
+    'hearing-order';
+
+  window.document.body.appendChild(link);
+
+  link.click();
+
+  window.document.body.removeChild(link);
+}
+
 export function Hearings() {
   const [hearings, setHearings] =
-    useState<HearingRecord[]>(loadHearings);
+    useState<HearingRecord[]>(
+      loadHearings,
+    );
 
   const [cases, setCases] =
     useState<StoredCase[]>(loadCases);
@@ -295,15 +404,21 @@ export function Hearings() {
   const [staff, setStaff] =
     useState<StoredStaff[]>(loadStaff);
 
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] =
+    useState('');
 
   const [statusFilter, setStatusFilter] =
-    useState<'All' | HearingStatus>('All');
+    useState<'All' | HearingStatus>(
+      'All',
+    );
 
-  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [isFormOpen, setIsFormOpen] =
+    useState(false);
 
-  const [editingHearingId, setEditingHearingId] =
-    useState<number | null>(null);
+  const [
+    editingHearingId,
+    setEditingHearingId,
+  ] = useState<number | null>(null);
 
   const [form, setForm] =
     useState<HearingForm>(emptyForm);
@@ -323,8 +438,15 @@ export function Hearings() {
 
     refreshRelatedData();
 
-    window.addEventListener('focus', refreshRelatedData);
-    window.addEventListener('storage', refreshRelatedData);
+    window.addEventListener(
+      'focus',
+      refreshRelatedData,
+    );
+
+    window.addEventListener(
+      'storage',
+      refreshRelatedData,
+    );
 
     return () => {
       window.removeEventListener(
@@ -340,14 +462,20 @@ export function Hearings() {
   }, []);
 
   const filteredHearings = useMemo(() => {
-    const search = searchTerm.trim().toLowerCase();
+    const search =
+      searchTerm.trim().toLowerCase();
 
     return [...hearings]
       .sort((first, second) => {
-        const firstValue = `${first.hearingDate} ${first.hearingTime}`;
-        const secondValue = `${second.hearingDate} ${second.hearingTime}`;
+        const firstValue =
+          `${first.hearingDate} ${first.hearingTime}`;
 
-        return firstValue.localeCompare(secondValue);
+        const secondValue =
+          `${second.hearingDate} ${second.hearingTime}`;
+
+        return firstValue.localeCompare(
+          secondValue,
+        );
       })
       .filter((hearing) => {
         const matchesStatus =
@@ -370,6 +498,7 @@ export function Hearings() {
             hearing.judgeName,
             hearing.assignedLawyer,
             hearing.status,
+            hearing.priority,
             hearing.outcome,
             hearing.notes,
           ]
@@ -377,9 +506,16 @@ export function Hearings() {
             .toLowerCase()
             .includes(search);
 
-        return matchesStatus && matchesSearch;
+        return (
+          matchesStatus &&
+          matchesSearch
+        );
       });
-  }, [hearings, searchTerm, statusFilter]);
+  }, [
+    hearings,
+    searchTerm,
+    statusFilter,
+  ]);
 
   const today = getLocalDate();
 
@@ -395,14 +531,17 @@ export function Hearings() {
       hearing.status === 'Upcoming',
   ).length;
 
-  const completedHearings = hearings.filter(
-    (hearing) =>
-      hearing.status === 'Completed' ||
-      hearing.status === 'Attended',
-  ).length;
+  const completedHearings =
+    hearings.filter(
+      (hearing) =>
+        hearing.status === 'Completed' ||
+        hearing.status === 'Attended',
+    ).length;
 
-  const adjournedHearings = hearings.filter(
-    (hearing) => hearing.status === 'Adjourned',
+  const urgentHearings = hearings.filter(
+    (hearing) =>
+      hearing.priority === 'High' &&
+      hearing.status === 'Upcoming',
   ).length;
 
   const activeStaff = staff.filter(
@@ -422,7 +561,9 @@ export function Hearings() {
     setIsFormOpen(true);
   };
 
-  const openEditForm = (hearing: HearingRecord) => {
+  const openEditForm = (
+    hearing: HearingRecord,
+  ) => {
     setEditingHearingId(hearing.id);
 
     setForm({
@@ -439,13 +580,25 @@ export function Hearings() {
       hearingType: hearing.hearingType,
       courtHall: hearing.courtHall,
       judgeName: hearing.judgeName,
-      assignedLawyer: hearing.assignedLawyer,
+      assignedLawyer:
+        hearing.assignedLawyer,
       status: hearing.status,
+      priority: hearing.priority,
       outcome: hearing.outcome,
-      nextHearingDate: hearing.nextHearingDate,
-      nextHearingTime: hearing.nextHearingTime,
+      nextHearingDate:
+        hearing.nextHearingDate,
+      nextHearingTime:
+        hearing.nextHearingTime,
       notes: hearing.notes,
-      reminderDays: String(hearing.reminderDays),
+      reminderDays: String(
+        hearing.reminderDays,
+      ),
+      orderFileName:
+        hearing.orderFileName || '',
+      orderFileType:
+        hearing.orderFileType || '',
+      orderFileDataUrl:
+        hearing.orderFileDataUrl || '',
     });
 
     setIsFormOpen(true);
@@ -457,7 +610,9 @@ export function Hearings() {
     setForm(emptyForm);
   };
 
-  const updateForm = <K extends keyof HearingForm>(
+  const updateForm = <
+    K extends keyof HearingForm,
+  >(
     field: K,
     value: HearingForm[K],
   ) => {
@@ -467,23 +622,29 @@ export function Hearings() {
     }));
   };
 
-  const handleCaseChange = (reference: string) => {
+  const handleCaseChange = (
+    reference: string,
+  ) => {
     const selectedCase = cases.find(
-      (caseItem) => caseItem.reference === reference,
+      (caseItem) =>
+        caseItem.reference === reference,
     );
 
     setForm((currentForm) => ({
       ...currentForm,
       relatedCase: reference,
       caseTitle:
-        selectedCase?.title || currentForm.caseTitle,
+        selectedCase?.title ||
+        currentForm.caseTitle,
       clientName:
-        selectedCase?.client || currentForm.clientName,
+        selectedCase?.client ||
+        currentForm.clientName,
       opponentName:
         selectedCase?.opponent ||
         currentForm.opponentName,
       courtName:
-        selectedCase?.court || currentForm.courtName,
+        selectedCase?.court ||
+        currentForm.courtName,
       assignedLawyer:
         selectedCase?.assignedTo ||
         currentForm.assignedLawyer,
@@ -494,65 +655,154 @@ export function Hearings() {
           : ''),
     }));
   };
+  const handleOrderFileUpload = (
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = event.target.files?.[0];
 
-  const saveHearing = (event: FormEvent) => {
+    if (!file) {
+      return;
+    }
+
+    if (file.size > MAX_FILE_SIZE) {
+      window.alert(
+        'Please select a file smaller than 2 MB.',
+      );
+
+      event.target.value = '';
+      return;
+    }
+
+    const reader = new FileReader();
+
+    reader.onerror = () => {
+      window.alert(
+        'The selected hearing order could not be read.',
+      );
+    };
+
+    reader.onload = () => {
+      if (typeof reader.result !== 'string') {
+        window.alert(
+          'The selected hearing order could not be saved.',
+        );
+
+        return;
+      }
+
+      setForm((currentForm) => ({
+        ...currentForm,
+        orderFileName: file.name,
+        orderFileType:
+          file.type || 'application/octet-stream',
+        orderFileDataUrl: reader.result,
+      }));
+    };
+
+    reader.readAsDataURL(file);
+  };
+
+  const removeOrderFile = () => {
+    setForm((currentForm) => ({
+      ...currentForm,
+      orderFileName: '',
+      orderFileType: '',
+      orderFileDataUrl: '',
+    }));
+  };
+
+  const saveHearing = (
+    event: FormEvent,
+  ) => {
     event.preventDefault();
 
     if (!form.title.trim()) {
-      window.alert('Hearing title is required.');
+      window.alert(
+        'Hearing title is required.',
+      );
+
       return;
     }
 
     if (!form.hearingDate) {
-      window.alert('Hearing date is required.');
+      window.alert(
+        'Hearing date is required.',
+      );
+
       return;
     }
 
     const reminderDays =
-      Number.parseInt(form.reminderDays, 10) || 0;
+      Number.parseInt(
+        form.reminderDays,
+        10,
+      ) || 0;
 
     const now = new Date().toISOString();
 
     const hearingData = {
       title: form.title.trim(),
-      relatedCase: form.relatedCase.trim(),
+      relatedCase:
+        form.relatedCase.trim(),
       caseTitle: form.caseTitle.trim(),
-      clientName: form.clientName.trim(),
-      opponentName: form.opponentName.trim(),
+      clientName:
+        form.clientName.trim(),
+      opponentName:
+        form.opponentName.trim(),
       courtName: form.courtName.trim(),
       emirate: form.emirate.trim(),
-      caseNumber: form.caseNumber.trim(),
+      caseNumber:
+        form.caseNumber.trim(),
       hearingDate: form.hearingDate,
       hearingTime: form.hearingTime,
       hearingType: form.hearingType,
       courtHall: form.courtHall.trim(),
       judgeName: form.judgeName.trim(),
-      assignedLawyer: form.assignedLawyer.trim(),
+      assignedLawyer:
+        form.assignedLawyer.trim(),
       status: form.status,
+      priority: form.priority,
       outcome: form.outcome.trim(),
-      nextHearingDate: form.nextHearingDate,
-      nextHearingTime: form.nextHearingTime,
+      nextHearingDate:
+        form.nextHearingDate,
+      nextHearingTime:
+        form.nextHearingTime,
       notes: form.notes.trim(),
       reminderDays,
+      orderFileName:
+        form.orderFileName,
+      orderFileType:
+        form.orderFileType,
+      orderFileDataUrl:
+        form.orderFileDataUrl,
       updatedAt: now,
     };
 
     if (editingHearingId !== null) {
-      setHearings((currentHearings) =>
-        currentHearings.map((hearing) => {
-          if (hearing.id !== editingHearingId) {
-            return hearing;
-          }
+      setHearings(
+        (currentHearings) =>
+          currentHearings.map(
+            (hearing) => {
+              if (
+                hearing.id !==
+                editingHearingId
+              ) {
+                return hearing;
+              }
 
-          const updatedHearing = {
-            ...hearing,
-            ...hearingData,
-          };
+              const updatedHearing: HearingRecord =
+                {
+                  ...hearing,
+                  ...hearingData,
+                };
 
-          saveCalendarEvent(updatedHearing);
+              saveCalendarEvent(
+                updatedHearing,
+              );
 
-          return updatedHearing;
-        }),
+              return updatedHearing;
+            },
+          ),
       );
     } else {
       const newHearing: HearingRecord = {
@@ -561,10 +811,12 @@ export function Hearings() {
         createdAt: now,
       };
 
-      setHearings((currentHearings) => [
-        newHearing,
-        ...currentHearings,
-      ]);
+      setHearings(
+        (currentHearings) => [
+          newHearing,
+          ...currentHearings,
+        ],
+      );
 
       saveCalendarEvent(newHearing);
     }
@@ -572,7 +824,9 @@ export function Hearings() {
     closeForm();
   };
 
-  const deleteHearing = (id: number) => {
+  const deleteHearing = (
+    id: number,
+  ) => {
     const confirmed = window.confirm(
       'Delete this hearing permanently?',
     );
@@ -581,10 +835,12 @@ export function Hearings() {
       return;
     }
 
-    setHearings((currentHearings) =>
-      currentHearings.filter(
-        (hearing) => hearing.id !== id,
-      ),
+    setHearings(
+      (currentHearings) =>
+        currentHearings.filter(
+          (hearing) =>
+            hearing.id !== id,
+        ),
     );
 
     removeCalendarEvent(id);
@@ -594,16 +850,24 @@ export function Hearings() {
     id: number,
     status: HearingStatus,
   ) => {
-    setHearings((currentHearings) =>
-      currentHearings.map((hearing) =>
-        hearing.id === id
-          ? {
+    setHearings(
+      (currentHearings) =>
+        currentHearings.map(
+          (hearing) => {
+            if (hearing.id !== id) {
+              return hearing;
+            }
+
+            const updatedHearing = {
               ...hearing,
               status,
-              updatedAt: new Date().toISOString(),
-            }
-          : hearing,
-      ),
+              updatedAt:
+                new Date().toISOString(),
+            };
+
+            return updatedHearing;
+          },
+        ),
     );
   };
 
@@ -618,30 +882,57 @@ export function Hearings() {
       return;
     }
 
+    const alreadyExists =
+      hearings.some(
+        (existingHearing) =>
+          existingHearing.relatedCase ===
+            hearing.relatedCase &&
+          existingHearing.hearingDate ===
+            hearing.nextHearingDate &&
+          existingHearing.hearingTime ===
+            hearing.nextHearingTime,
+      );
+
+    if (alreadyExists) {
+      window.alert(
+        'This next hearing already exists.',
+      );
+
+      return;
+    }
+
     const now = new Date().toISOString();
 
     const newHearing: HearingRecord = {
       ...hearing,
       id: Date.now(),
       title: `Next Hearing — ${
-        hearing.caseTitle || hearing.title
+        hearing.caseTitle ||
+        hearing.title
       }`,
-      hearingDate: hearing.nextHearingDate,
-      hearingTime: hearing.nextHearingTime,
+      hearingDate:
+        hearing.nextHearingDate,
+      hearingTime:
+        hearing.nextHearingTime,
       hearingType: 'Submission',
       status: 'Upcoming',
       outcome: '',
       nextHearingDate: '',
       nextHearingTime: '',
       notes: '',
+      orderFileName: '',
+      orderFileType: '',
+      orderFileDataUrl: '',
       createdAt: now,
       updatedAt: now,
     };
 
-    setHearings((currentHearings) => [
-      newHearing,
-      ...currentHearings,
-    ]);
+    setHearings(
+      (currentHearings) => [
+        newHearing,
+        ...currentHearings,
+      ],
+    );
 
     saveCalendarEvent(newHearing);
 
@@ -654,13 +945,28 @@ export function Hearings() {
     HearingStatus,
     string
   > = {
-    Upcoming: 'bg-blue-100 text-blue-700',
-    Attended: 'bg-green-100 text-green-700',
-    Adjourned: 'bg-yellow-100 text-yellow-700',
+    Upcoming:
+      'bg-blue-100 text-blue-700',
+    Attended:
+      'bg-green-100 text-green-700',
+    Adjourned:
+      'bg-yellow-100 text-yellow-700',
     'Judgment Reserved':
       'bg-purple-100 text-purple-700',
-    Completed: 'bg-emerald-100 text-emerald-700',
-    Cancelled: 'bg-gray-100 text-gray-700',
+    Completed:
+      'bg-emerald-100 text-emerald-700',
+    Cancelled:
+      'bg-gray-100 text-gray-700',
+  };
+
+  const priorityClasses: Record<
+    HearingPriority,
+    string
+  > = {
+    High: 'bg-red-100 text-red-700',
+    Medium:
+      'bg-yellow-100 text-yellow-700',
+    Low: 'bg-green-100 text-green-700',
   };
 
   return (
@@ -673,8 +979,9 @@ export function Hearings() {
           </h1>
 
           <p className="mt-1 text-gray-500">
-            Manage court hearings, appearances,
-            outcomes and adjournments.
+            Manage court hearings,
+            appearances, outcomes and
+            adjournments.
           </p>
         </div>
 
@@ -721,11 +1028,11 @@ export function Hearings() {
 
         <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
           <p className="text-sm text-gray-500">
-            Adjourned
+            High priority
           </p>
 
-          <p className="mt-1 text-2xl font-bold text-yellow-700">
-            {adjournedHearings}
+          <p className="mt-1 text-2xl font-bold text-red-700">
+            {urgentHearings}
           </p>
         </div>
       </div>
@@ -738,7 +1045,9 @@ export function Hearings() {
             type="search"
             value={searchTerm}
             onChange={(event) =>
-              setSearchTerm(event.target.value)
+              setSearchTerm(
+                event.target.value,
+              )
             }
             placeholder="Search hearings"
             className="w-full bg-transparent text-gray-900 outline-none placeholder:text-gray-400"
@@ -787,265 +1096,346 @@ export function Hearings() {
       </div>
 
       <div className="mt-6 space-y-4">
-        {filteredHearings.map((hearing) => (
-          <article
-            key={hearing.id}
-            className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm"
-          >
-            <div className="flex items-start gap-3">
-              <div className="shrink-0 rounded-xl bg-yellow-50 p-3">
-                <Scale className="h-6 w-6 text-[#C9A84C]" />
-              </div>
-
-              <div className="min-w-0 flex-1">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <h2 className="font-semibold text-gray-900">
-                      {hearing.title}
-                    </h2>
-
-                    <p className="mt-1 text-sm font-medium text-gray-600">
-                      {hearing.relatedCase ||
-                        hearing.caseNumber ||
-                        'No case reference'}
-                    </p>
-
-                    {hearing.caseTitle && (
-                      <p className="mt-1 text-sm text-gray-500">
-                        {hearing.caseTitle}
-                      </p>
-                    )}
-                  </div>
-
-                  <span
-                    className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold ${
-                      statusClasses[hearing.status]
-                    }`}
-                  >
-                    {hearing.status}
-                  </span>
+        {filteredHearings.map(
+          (hearing) => (
+            <article
+              key={hearing.id}
+              className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm"
+            >
+              <div className="flex items-start gap-3">
+                <div className="shrink-0 rounded-xl bg-yellow-50 p-3">
+                  <Scale className="h-6 w-6 text-[#C9A84C]" />
                 </div>
 
-                <div className="mt-4 rounded-2xl bg-[#111111] p-4 text-white">
-                  <div className="grid gap-4 sm:grid-cols-3">
-                    <div>
-                      <p className="text-xs uppercase tracking-wide text-gray-400">
-                        Hearing date
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <h2 className="font-semibold text-gray-900">
+                        {hearing.title}
+                      </h2>
+
+                      <p className="mt-1 text-sm font-medium text-gray-600">
+                        {hearing.relatedCase ||
+                          hearing.caseNumber ||
+                          'No case reference'}
                       </p>
 
-                      <p className="mt-1 font-bold text-[#C9A84C]">
-                        {formatDate(
-                          hearing.hearingDate,
-                        )}
-                      </p>
-
-                      <p className="mt-1 text-xs text-gray-300">
-                        {getDateDescription(
-                          hearing.hearingDate,
-                        )}
-                      </p>
+                      {hearing.caseTitle && (
+                        <p className="mt-1 text-sm text-gray-500">
+                          {
+                            hearing.caseTitle
+                          }
+                        </p>
+                      )}
                     </div>
 
-                    <div>
-                      <p className="text-xs uppercase tracking-wide text-gray-400">
-                        Time
-                      </p>
+                    <div className="flex flex-col items-end gap-2">
+                      <span
+                        className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                          statusClasses[
+                            hearing.status
+                          ]
+                        }`}
+                      >
+                        {hearing.status}
+                      </span>
 
-                      <p className="mt-1 font-bold">
-                        {hearing.hearingTime ||
-                          'Not recorded'}
-                      </p>
-                    </div>
-
-                    <div>
-                      <p className="text-xs uppercase tracking-wide text-gray-400">
-                        Type
-                      </p>
-
-                      <p className="mt-1 font-bold">
-                        {hearing.hearingType}
-                      </p>
+                      <span
+                        className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                          priorityClasses[
+                            hearing.priority
+                          ]
+                        }`}
+                      >
+                        {hearing.priority}
+                      </span>
                     </div>
                   </div>
-                </div>
 
-                <div className="mt-4 grid gap-3 text-sm text-gray-600 sm:grid-cols-2 lg:grid-cols-3">
-                  <p className="flex items-start gap-2">
-                    <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
-
-                    <span>
-                      <span className="font-medium text-gray-700">
-                        Court:
-                      </span>{' '}
-                      {hearing.courtName ||
-                        'Not recorded'}
-                    </span>
-                  </p>
-
-                  <p>
-                    <span className="font-medium text-gray-700">
-                      Emirate:
-                    </span>{' '}
-                    {hearing.emirate ||
-                      'Not recorded'}
-                  </p>
-
-                  <p>
-                    <span className="font-medium text-gray-700">
-                      Court hall:
-                    </span>{' '}
-                    {hearing.courtHall ||
-                      'Not recorded'}
-                  </p>
-
-                  <p>
-                    <span className="font-medium text-gray-700">
-                      Client:
-                    </span>{' '}
-                    {hearing.clientName ||
-                      'Not recorded'}
-                  </p>
-
-                  <p>
-                    <span className="font-medium text-gray-700">
-                      Opponent:
-                    </span>{' '}
-                    {hearing.opponentName ||
-                      'Not recorded'}
-                  </p>
-
-                  <p className="flex items-start gap-2">
-                    <UserRound className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
-
-                    <span>
-                      <span className="font-medium text-gray-700">
-                        Assigned:
-                      </span>{' '}
-                      {hearing.assignedLawyer ||
-                        'Not assigned'}
-                    </span>
-                  </p>
-
-                  <p>
-                    <span className="font-medium text-gray-700">
-                      Judge:
-                    </span>{' '}
-                    {hearing.judgeName ||
-                      'Not recorded'}
-                  </p>
-
-                  <p>
-                    <span className="font-medium text-gray-700">
-                      Case number:
-                    </span>{' '}
-                    {hearing.caseNumber ||
-                      'Not recorded'}
-                  </p>
-
-                  <p>
-                    <span className="font-medium text-gray-700">
-                      Reminder:
-                    </span>{' '}
-                    {hearing.reminderDays} day
-                    {hearing.reminderDays === 1
-                      ? ''
-                      : 's'}{' '}
-                    before
-                  </p>
-                </div>
-
-                {hearing.outcome && (
-                  <div className="mt-4 rounded-xl border border-green-200 bg-green-50 p-4">
-                    <p className="text-sm font-semibold text-green-800">
-                      Hearing Outcome
-                    </p>
-
-                    <p className="mt-2 text-sm leading-6 text-green-700">
-                      {hearing.outcome}
-                    </p>
-                  </div>
-                )}
-
-                {hearing.nextHearingDate && (
-                  <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 p-4">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="mt-4 rounded-2xl bg-[#111111] p-4 text-white">
+                    <div className="grid gap-4 sm:grid-cols-3">
                       <div>
-                        <p className="text-sm font-semibold text-blue-800">
-                          Next Hearing
+                        <p className="text-xs uppercase tracking-wide text-gray-400">
+                          Hearing date
                         </p>
 
-                        <p className="mt-1 text-sm text-blue-700">
+                        <p className="mt-1 font-bold text-[#C9A84C]">
                           {formatDate(
-                            hearing.nextHearingDate,
+                            hearing.hearingDate,
                           )}
-                          {hearing.nextHearingTime
-                            ? ` at ${hearing.nextHearingTime}`
-                            : ''}
+                        </p>
+
+                        <p className="mt-1 text-xs text-gray-300">
+                          {getDateDescription(
+                            hearing.hearingDate,
+                          )}
                         </p>
                       </div>
 
+                      <div>
+                        <p className="text-xs uppercase tracking-wide text-gray-400">
+                          Time
+                        </p>
+
+                        <p className="mt-1 font-bold">
+                          {formatTime(
+                            hearing.hearingTime,
+                          )}
+                        </p>
+                      </div>
+
+                      <div>
+                        <p className="text-xs uppercase tracking-wide text-gray-400">
+                          Type
+                        </p>
+
+                        <p className="mt-1 font-bold">
+                          {
+                            hearing.hearingType
+                          }
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 grid gap-3 text-sm text-gray-600 sm:grid-cols-2 lg:grid-cols-3">
+                    <p className="flex items-start gap-2">
+                      <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
+
+                      <span>
+                        <span className="font-medium text-gray-700">
+                          Court:
+                        </span>{' '}
+                        {hearing.courtName ||
+                          'Not recorded'}
+                      </span>
+                    </p>
+
+                    <p>
+                      <span className="font-medium text-gray-700">
+                        Emirate:
+                      </span>{' '}
+                      {hearing.emirate ||
+                        'Not recorded'}
+                    </p>
+
+                    <p>
+                      <span className="font-medium text-gray-700">
+                        Hall:
+                      </span>{' '}
+                      {hearing.courtHall ||
+                        'Not recorded'}
+                    </p>
+
+                    <p>
+                      <span className="font-medium text-gray-700">
+                        Client:
+                      </span>{' '}
+                      {hearing.clientName ||
+                        'Not recorded'}
+                    </p>
+
+                    <p>
+                      <span className="font-medium text-gray-700">
+                        Opponent:
+                      </span>{' '}
+                      {hearing.opponentName ||
+                        'Not recorded'}
+                    </p>
+
+                    <p className="flex items-start gap-2">
+                      <UserRound className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
+
+                      <span>
+                        <span className="font-medium text-gray-700">
+                          Assigned:
+                        </span>{' '}
+                        {hearing.assignedLawyer ||
+                          'Not assigned'}
+                      </span>
+                    </p>
+
+                    <p>
+                      <span className="font-medium text-gray-700">
+                        Judge:
+                      </span>{' '}
+                      {hearing.judgeName ||
+                        'Not recorded'}
+                    </p>
+
+                    <p>
+                      <span className="font-medium text-gray-700">
+                        Case number:
+                      </span>{' '}
+                      {hearing.caseNumber ||
+                        'Not recorded'}
+                    </p>
+
+                    <p>
+                      <span className="font-medium text-gray-700">
+                        Reminder:
+                      </span>{' '}
+                      {hearing.reminderDays}{' '}
+                      day
+                      {hearing.reminderDays ===
+                      1
+                        ? ''
+                        : 's'}{' '}
+                      before
+                    </p>
+                  </div>
+                  {hearing.outcome && (
+                    <div className="mt-4 rounded-xl border border-green-200 bg-green-50 p-4">
+                      <p className="text-sm font-semibold text-green-800">
+                        Hearing Outcome
+                      </p>
+
+                      <p className="mt-2 text-sm leading-6 text-green-700">
+                        {hearing.outcome}
+                      </p>
+                    </div>
+                  )}
+
+                  {hearing.nextHearingDate && (
+                    <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 p-4">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold text-blue-800">
+                            Next Hearing
+                          </p>
+
+                          <p className="mt-1 text-sm text-blue-700">
+                            {formatDate(
+                              hearing.nextHearingDate,
+                            )}
+
+                            {hearing.nextHearingTime
+                              ? ` at ${formatTime(
+                                  hearing.nextHearingTime,
+                                )}`
+                              : ''}
+                          </p>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() =>
+                            createNextHearing(
+                              hearing,
+                            )
+                          }
+                          className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+                        >
+                          Add Next Hearing
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {hearing.orderFileDataUrl && (
+                    <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-4">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div className="flex min-w-0 items-center gap-3">
+                          <div className="rounded-lg bg-white p-2 shadow-sm">
+                            <FileText className="h-5 w-5 text-[#C9A84C]" />
+                          </div>
+
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold text-gray-800">
+                              Hearing Order
+                            </p>
+
+                            <p className="truncate text-xs text-gray-500">
+                              {hearing.orderFileName}
+                            </p>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() =>
+                            downloadOrderFile(
+                              hearing,
+                            )
+                          }
+                          className="rounded-lg bg-gray-900 px-3 py-2 text-sm font-semibold text-white hover:bg-black"
+                        >
+                          Download
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {hearing.notes && (
+                    <p className="mt-4 rounded-xl bg-gray-50 p-4 text-sm leading-6 text-gray-600">
+                      {hearing.notes}
+                    </p>
+                  )}
+
+                  <div className="mt-5 flex flex-wrap justify-end gap-2 border-t border-gray-100 pt-4">
+                    {hearing.status ===
+                      'Upcoming' && (
                       <button
                         type="button"
                         onClick={() =>
-                          createNextHearing(hearing)
+                          updateHearingStatus(
+                            hearing.id,
+                            'Attended',
+                          )
                         }
-                        className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+                        className="flex items-center gap-1 rounded-lg px-3 py-2 text-sm font-medium text-green-600 hover:bg-green-50"
                       >
-                        Add Next Hearing
+                        <CheckCircle2 className="h-4 w-4" />
+                        Mark Attended
                       </button>
-                    </div>
-                  </div>
-                )}
+                    )}
 
-                {hearing.notes && (
-                  <p className="mt-4 rounded-xl bg-gray-50 p-4 text-sm leading-6 text-gray-600">
-                    {hearing.notes}
-                  </p>
-                )}
+                    {hearing.status ===
+                      'Attended' && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updateHearingStatus(
+                            hearing.id,
+                            'Completed',
+                          )
+                        }
+                        className="flex items-center gap-1 rounded-lg px-3 py-2 text-sm font-medium text-emerald-600 hover:bg-emerald-50"
+                      >
+                        <CheckCircle2 className="h-4 w-4" />
+                        Complete
+                      </button>
+                    )}
 
-                <div className="mt-5 flex flex-wrap justify-end gap-2 border-t border-gray-100 pt-4">
-                  {hearing.status === 'Upcoming' && (
                     <button
                       type="button"
                       onClick={() =>
-                        updateHearingStatus(
+                        openEditForm(hearing)
+                      }
+                      className="flex items-center gap-1 rounded-lg px-3 py-2 text-sm font-medium text-blue-600 hover:bg-blue-50"
+                    >
+                      <Pencil className="h-4 w-4" />
+                      Edit
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        deleteHearing(
                           hearing.id,
-                          'Attended',
                         )
                       }
-                      className="flex items-center gap-1 rounded-lg px-3 py-2 text-sm font-medium text-green-600 hover:bg-green-50"
+                      className="flex items-center gap-1 rounded-lg px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50"
                     >
-                      <CheckCircle2 className="h-4 w-4" />
-                      Mark Attended
+                      <Trash2 className="h-4 w-4" />
+                      Delete
                     </button>
-                  )}
-
-                  <button
-                    type="button"
-                    onClick={() =>
-                      openEditForm(hearing)
-                    }
-                    className="flex items-center gap-1 rounded-lg px-3 py-2 text-sm font-medium text-blue-600 hover:bg-blue-50"
-                  >
-                    <Pencil className="h-4 w-4" />
-                    Edit
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() =>
-                      deleteHearing(hearing.id)
-                    }
-                    className="flex items-center gap-1 rounded-lg px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                    Delete
-                  </button>
+                  </div>
                 </div>
               </div>
-            </div>
-          </article>
-        ))}
+            </article>
+          ),
+        )}
 
         {filteredHearings.length === 0 && (
           <div className="rounded-2xl border border-dashed border-gray-300 bg-white p-8 text-center">
@@ -1070,8 +1460,8 @@ export function Hearings() {
                 </h2>
 
                 <p className="mt-1 text-sm text-gray-500">
-                  Record court, case, appearance and
-                  outcome information.
+                  Record case, court, appearance
+                  and outcome details.
                 </p>
               </div>
 
@@ -1090,9 +1480,20 @@ export function Hearings() {
               className="space-y-6 p-5"
             >
               <section>
-                <h3 className="font-bold text-gray-900">
-                  Case Information
-                </h3>
+                <div className="flex items-center gap-3">
+                  <Scale className="h-5 w-5 text-[#C9A84C]" />
+
+                  <div>
+                    <h3 className="font-bold text-gray-900">
+                      Case Information
+                    </h3>
+
+                    <p className="text-sm text-gray-500">
+                      Link the hearing to an existing
+                      SHAB case or enter it manually.
+                    </p>
+                  </div>
+                </div>
 
                 <div className="mt-4 grid gap-4 sm:grid-cols-2">
                   <div>
@@ -1134,17 +1535,21 @@ export function Hearings() {
                           No linked case
                         </option>
 
-                        {cases.map((caseItem) => (
-                          <option
-                            key={caseItem.id}
-                            value={
-                              caseItem.reference
-                            }
-                          >
-                            {caseItem.reference} —{' '}
-                            {caseItem.title}
-                          </option>
-                        ))}
+                        {cases.map(
+                          (caseItem) => (
+                            <option
+                              key={caseItem.id}
+                              value={
+                                caseItem.reference
+                              }
+                            >
+                              {
+                                caseItem.reference
+                              }{' '}
+                              — {caseItem.title}
+                            </option>
+                          ),
+                        )}
                       </select>
                     ) : (
                       <input
@@ -1176,6 +1581,7 @@ export function Hearings() {
                           event.target.value,
                         )
                       }
+                      placeholder="Case title"
                       className="w-full rounded-xl border border-gray-300 px-4 py-3"
                     />
                   </div>
@@ -1213,6 +1619,7 @@ export function Hearings() {
                           event.target.value,
                         )
                       }
+                      placeholder="Client name"
                       className="w-full rounded-xl border border-gray-300 px-4 py-3"
                     />
                   </div>
@@ -1231,6 +1638,7 @@ export function Hearings() {
                           event.target.value,
                         )
                       }
+                      placeholder="Opponent name"
                       className="w-full rounded-xl border border-gray-300 px-4 py-3"
                     />
                   </div>
@@ -1238,9 +1646,20 @@ export function Hearings() {
               </section>
 
               <section className="border-t border-gray-200 pt-6">
-                <h3 className="font-bold text-gray-900">
-                  Court and Hearing Details
-                </h3>
+                <div className="flex items-center gap-3">
+                  <Gavel className="h-5 w-5 text-[#C9A84C]" />
+
+                  <div>
+                    <h3 className="font-bold text-gray-900">
+                      Court and Hearing Details
+                    </h3>
+
+                    <p className="text-sm text-gray-500">
+                      Enter the court venue, date, time
+                      and appearance details.
+                    </p>
+                  </div>
+                </div>
 
                 <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                   <div>
@@ -1428,7 +1847,6 @@ export function Hearings() {
                       className="w-full rounded-xl border border-gray-300 px-4 py-3"
                     />
                   </div>
-
                   <div>
                     <label className="mb-2 block text-sm font-semibold text-gray-700">
                       Judge
@@ -1443,6 +1861,7 @@ export function Hearings() {
                           event.target.value,
                         )
                       }
+                      placeholder="Judge name"
                       className="w-full rounded-xl border border-gray-300 px-4 py-3"
                     />
                   </div>
@@ -1491,9 +1910,40 @@ export function Hearings() {
                             event.target.value,
                           )
                         }
+                        placeholder="Assigned staff member"
                         className="w-full rounded-xl border border-gray-300 px-4 py-3"
                       />
                     )}
+                  </div>
+
+                  <div>
+                    <label className="mb-2 block text-sm font-semibold text-gray-700">
+                      Priority
+                    </label>
+
+                    <select
+                      value={form.priority}
+                      onChange={(event) =>
+                        updateForm(
+                          'priority',
+                          event.target
+                            .value as HearingPriority,
+                        )
+                      }
+                      className="w-full rounded-xl border border-gray-300 bg-white px-4 py-3"
+                    >
+                      <option value="High">
+                        High
+                      </option>
+
+                      <option value="Medium">
+                        Medium
+                      </option>
+
+                      <option value="Low">
+                        Low
+                      </option>
+                    </select>
                   </div>
 
                   <div>
@@ -1519,9 +1969,20 @@ export function Hearings() {
               </section>
 
               <section className="border-t border-gray-200 pt-6">
-                <h3 className="font-bold text-gray-900">
-                  Status and Outcome
-                </h3>
+                <div className="flex items-center gap-3">
+                  <CheckCircle2 className="h-5 w-5 text-[#C9A84C]" />
+
+                  <div>
+                    <h3 className="font-bold text-gray-900">
+                      Status and Outcome
+                    </h3>
+
+                    <p className="text-sm text-gray-500">
+                      Record the result, adjournment and
+                      next scheduled hearing.
+                    </p>
+                  </div>
+                </div>
 
                 <div className="mt-4 grid gap-4 sm:grid-cols-2">
                   <div>
@@ -1565,8 +2026,6 @@ export function Hearings() {
                       </option>
                     </select>
                   </div>
-
-                  <div />
 
                   <div className="sm:col-span-2">
                     <label className="mb-2 block text-sm font-semibold text-gray-700">
@@ -1644,10 +2103,90 @@ export function Hearings() {
                 </div>
               </section>
 
-              <div className="rounded-xl bg-yellow-50 p-4 text-sm leading-6 text-yellow-800">
+              <section className="border-t border-gray-200 pt-6">
+                <div className="flex items-center gap-3">
+                  <FileText className="h-5 w-5 text-[#C9A84C]" />
+
+                  <div>
+                    <h3 className="font-bold text-gray-900">
+                      Hearing Order
+                    </h3>
+
+                    <p className="text-sm text-gray-500">
+                      Upload the court order, adjournment
+                      note or hearing document.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-4">
+                  {form.orderFileDataUrl ? (
+                    <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-gray-200 bg-gray-50 p-4">
+                      <div className="flex min-w-0 items-center gap-3">
+                        <div className="rounded-lg bg-white p-2 shadow-sm">
+                          <FileText className="h-5 w-5 text-[#C9A84C]" />
+                        </div>
+
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-gray-800">
+                            Uploaded file
+                          </p>
+
+                          <p className="truncate text-xs text-gray-500">
+                            {form.orderFileName}
+                          </p>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={removeOrderFile}
+                        className="rounded-lg px-3 py-2 text-sm font-semibold text-red-600 hover:bg-red-50"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ) : (
+                    <label className="flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-gray-300 p-8 text-center hover:border-[#C9A84C] hover:bg-yellow-50">
+                      <FileText className="h-10 w-10 text-gray-400" />
+
+                      <span className="mt-3 font-semibold text-gray-700">
+                        Tap to upload hearing order
+                      </span>
+
+                      <span className="mt-1 text-sm text-gray-500">
+                        PDF, Word or image — maximum 2 MB
+                      </span>
+
+                      <input
+                        type="file"
+                        accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                        onChange={handleOrderFileUpload}
+                        className="hidden"
+                      />
+                    </label>
+                  )}
+                </div>
+              </section>
+
+              <div className="rounded-xl border border-yellow-200 bg-yellow-50 p-4 text-sm leading-6 text-yellow-800">
                 Saving a hearing also adds or updates the
-                corresponding event in the SHAB Calendar.
+                corresponding entry in the SHAB Calendar.
+                Uploaded files are stored only in this browser
+                on this device.
               </div>
+
+              {form.priority === 'High' && (
+                <div className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-sm leading-6 text-red-700">
+                  <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+
+                  <p>
+                    This hearing is marked as high priority.
+                    Confirm the assigned staff member,
+                    reminder period and preparation notes.
+                  </p>
+                </div>
+              )}
 
               <div className="flex gap-3 border-t border-gray-200 pt-5">
                 <button
