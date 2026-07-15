@@ -12,7 +12,7 @@ import { Dashboard } from './Pages/Dashboard';
 import { Clients } from './Pages/Clients';
 
 import { AIAssistant } from './pages/AIAssistant';
-import { CalendarPage } from './pages/CalendarPage';
+import { Calendar } from './pages/Calendar';
 import { Cases } from './pages/Cases';
 import { Documents } from './pages/Documents';
 import { Hearings } from './pages/Hearings';
