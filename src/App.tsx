@@ -42,10 +42,10 @@ function App() {
 
             <Route path="/tasks" element={<Tasks />} />
 
-            <Route
-              path="/calendar"
-              element={<CalendarPage />}
-            />
+            <<Route
+  path="/calendar"
+  element={<Calendar />}
+/>
 
             <Route
               path="/hearings"
