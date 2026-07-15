@@ -206,44 +206,34 @@ export function Clients() {
   }, [clients]);
 
   useEffect(() => {
-    const refreshClients = (
-      event: Event,
-    ) => {
-      if (
-        event instanceof CustomEvent &&
-        event.detail?.key &&
-        event.detail.key !==
-          'clients'
-      ) {
-        return;
-      }
+  const refreshClients = () => {
+    setClients(loadClients());
+  };
 
-      setClients(loadClients());
-    };
+  // The native storage event runs only when another
+  // browser tab or window changes localStorage.
+  window.addEventListener(
+    'storage',
+    refreshClients,
+  );
 
-    window.addEventListener(
-      'shab-storage-updated',
-      refreshClients,
-    );
+  window.addEventListener(
+    'focus',
+    refreshClients,
+  );
 
-    window.addEventListener(
+  return () => {
+    window.removeEventListener(
       'storage',
       refreshClients,
     );
 
-    return () => {
-      window.removeEventListener(
-        'shab-storage-updated',
-        refreshClients,
-      );
-
-      window.removeEventListener(
-        'storage',
-        refreshClients,
-      );
-    };
-  }, []);
-
+    window.removeEventListener(
+      'focus',
+      refreshClients,
+    );
+  };
+}, []);
   const filteredClients =
     useMemo(() => {
       const search =
