@@ -34,18 +34,30 @@ function App() {
 
         <main className="pb-24 lg:ml-64 lg:pb-0">
           <Routes>
-            <Route path="/" element={<Dashboard />} />
+            <Route
+              path="/"
+              element={<Dashboard />}
+            />
 
-            <Route path="/clients" element={<Clients />} />
+            <Route
+              path="/clients"
+              element={<Clients />}
+            />
 
-            <Route path="/cases" element={<Cases />} />
+            <Route
+              path="/cases"
+              element={<Cases />}
+            />
 
-            <Route path="/tasks" element={<Tasks />} />
+            <Route
+              path="/tasks"
+              element={<Tasks />}
+            />
 
-            <<Route
-  path="/calendar"
-  element={<Calendar />}
-/>
+            <Route
+              path="/calendar"
+              element={<Calendar />}
+            />
 
             <Route
               path="/hearings"
@@ -72,7 +84,10 @@ function App() {
               element={<Quotations />}
             />
 
-            <Route path="/staff" element={<Staff />} />
+            <Route
+              path="/staff"
+              element={<Staff />}
+            />
 
             <Route
               path="/ai-assistant"
@@ -89,11 +104,19 @@ function App() {
               element={<Settings />}
             />
 
-            <Route path="/more" element={<More />} />
+            <Route
+              path="/more"
+              element={<More />}
+            />
 
             <Route
               path="*"
-              element={<Navigate to="/" replace />}
+              element={
+                <Navigate
+                  to="/"
+                  replace
+                />
+              }
             />
           </Routes>
         </main>
