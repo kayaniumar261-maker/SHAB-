@@ -1,6 +1,6 @@
 /* ==========================================
    SHAB ERP Storage Service
-   Version: 2.0
+   Version: 2.1
 ========================================== */
 
 export type StorageKey =
@@ -15,278 +15,793 @@ export type StorageKey =
   | 'legal-notices'
   | 'staff'
   | 'notifications'
-  | 'settings'
   | 'activity-log';
+
+export type ObjectStorageKey =
+  | 'company-settings'
+  | 'id-counters';
+
+export type RecordId = number | string;
+
+type IdentifiableRecord = {
+  id: RecordId;
+};
+
+type StorageUpdateDetail = {
+  key: string;
+  operation:
+    | 'set'
+    | 'append'
+    | 'update'
+    | 'delete'
+    | 'clear'
+    | 'import';
+};
 
 const PREFIX = 'shab-';
 
-function buildKey(key: StorageKey): string {
+const LEGACY_COMPANY_SETTINGS_KEY =
+  'shab-company-settings';
+
+function buildKey(
+  key: StorageKey | ObjectStorageKey,
+): string {
   return `${PREFIX}${key}`;
 }
 
-class StorageService {
-  /* ------------------------------
-      Generic Methods
-  -------------------------------*/
-
-  get<T>(key: StorageKey): T[] {
-    try {
-      const raw = localStorage.getItem(buildKey(key));
-
-      if (!raw) {
-        return [];
-      }
-
-      const parsed = JSON.parse(raw);
-
-      return Array.isArray(parsed)
-        ? parsed
-        : [];
-    } catch (error) {
-      console.error(error);
-
-      return [];
-    }
+function getBrowserStorage(): Storage | null {
+  if (typeof window === 'undefined') {
+    return null;
   }
 
-  set<T>(
+  return window.localStorage;
+}
+
+function dispatchStorageUpdate(
+  detail: StorageUpdateDetail,
+): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  window.dispatchEvent(
+    new CustomEvent<StorageUpdateDetail>(
+      'shab-storage-updated',
+      {
+        detail,
+      },
+    ),
+  );
+}
+
+function safeParse<T>(
+  value: string | null,
+  fallback: T,
+): T {
+  if (!value) {
+    return fallback;
+  }
+
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+class StorageService {
+  /* ==========================================
+     Collection methods
+  ========================================== */
+
+  getCollection<T>(
+    key: StorageKey,
+    fallback: T[] = [],
+  ): T[] {
+    const storage = getBrowserStorage();
+
+    if (!storage) {
+      return fallback;
+    }
+
+    const parsed = safeParse<unknown>(
+      storage.getItem(buildKey(key)),
+      fallback,
+    );
+
+    return Array.isArray(parsed)
+      ? (parsed as T[])
+      : fallback;
+  }
+
+  setCollection<T>(
     key: StorageKey,
     data: T[],
-  ): void {
-    localStorage.setItem(
-      buildKey(key),
-      JSON.stringify(data),
-    );
+  ): boolean {
+    const storage = getBrowserStorage();
 
-    window.dispatchEvent(
-      new CustomEvent('shab-storage-updated', {
-        detail: key,
-      }),
-    );
-  }
+    if (!storage) {
+      return false;
+    }
 
-  clear(key: StorageKey): void {
-    localStorage.removeItem(buildKey(key));
+    try {
+      storage.setItem(
+        buildKey(key),
+        JSON.stringify(data),
+      );
 
-    window.dispatchEvent(
-      new CustomEvent('shab-storage-updated', {
-        detail: key,
-      }),
-    );
+      dispatchStorageUpdate({
+        key,
+        operation: 'set',
+      });
+
+      return true;
+    } catch (error) {
+      console.error(
+        `Unable to save SHAB collection: ${key}`,
+        error,
+      );
+
+      return false;
+    }
   }
 
   append<T>(
     key: StorageKey,
     item: T,
-  ) {
-    const list = this.get<T>(key);
+  ): T[] {
+    const currentItems =
+      this.getCollection<T>(key);
 
-    list.unshift(item);
+    const updatedItems = [
+      item,
+      ...currentItems,
+    ];
 
-    this.set(key, list);
-  }
-
-  update<T extends { id: number }>(
-    key: StorageKey,
-    item: T,
-  ) {
-    const list = this.get<T>(key);
-
-    const updated = list.map((x) =>
-      x.id === item.id ? item : x,
+    this.setCollection(
+      key,
+      updatedItems,
     );
 
-    this.set(key, updated);
+    dispatchStorageUpdate({
+      key,
+      operation: 'append',
+    });
+
+    return updatedItems;
+  }
+
+  update<T extends IdentifiableRecord>(
+    key: StorageKey,
+    item: T,
+  ): T[] {
+    const currentItems =
+      this.getCollection<T>(key);
+
+    const recordExists =
+      currentItems.some(
+        (currentItem) =>
+          currentItem.id === item.id,
+      );
+
+    const updatedItems = recordExists
+      ? currentItems.map(
+          (currentItem) =>
+            currentItem.id === item.id
+              ? item
+              : currentItem,
+        )
+      : [item, ...currentItems];
+
+    this.setCollection(
+      key,
+      updatedItems,
+    );
+
+    dispatchStorageUpdate({
+      key,
+      operation: 'update',
+    });
+
+    return updatedItems;
   }
 
   delete(
     key: StorageKey,
-    id: number,
-  ) {
-    const list =
-      this.get<{ id: number }>(key);
+    id: RecordId,
+  ): IdentifiableRecord[] {
+    const currentItems =
+      this.getCollection<IdentifiableRecord>(
+        key,
+      );
 
-    this.set(
+    const updatedItems =
+      currentItems.filter(
+        (item) => item.id !== id,
+      );
+
+    this.setCollection(
       key,
-      list.filter((x) => x.id !== id),
+      updatedItems,
+    );
+
+    dispatchStorageUpdate({
+      key,
+      operation: 'delete',
+    });
+
+    return updatedItems;
+  }
+
+  clearCollection(
+    key: StorageKey,
+  ): boolean {
+    const storage = getBrowserStorage();
+
+    if (!storage) {
+      return false;
+    }
+
+    try {
+      storage.removeItem(buildKey(key));
+
+      dispatchStorageUpdate({
+        key,
+        operation: 'clear',
+      });
+
+      return true;
+    } catch (error) {
+      console.error(
+        `Unable to clear SHAB collection: ${key}`,
+        error,
+      );
+
+      return false;
+    }
+  }
+
+  /* ==========================================
+     Single-object methods
+  ========================================== */
+
+  getObject<T>(
+    key: ObjectStorageKey,
+    fallback: T,
+  ): T {
+    const storage = getBrowserStorage();
+
+    if (!storage) {
+      return fallback;
+    }
+
+    return safeParse<T>(
+      storage.getItem(buildKey(key)),
+      fallback,
     );
   }
 
-  /* ------------------------------
-      Shortcuts
-  -------------------------------*/
+  setObject<T>(
+    key: ObjectStorageKey,
+    value: T,
+  ): boolean {
+    const storage = getBrowserStorage();
 
-  getClients() {
-    return this.get('clients');
+    if (!storage) {
+      return false;
+    }
+
+    try {
+      storage.setItem(
+        buildKey(key),
+        JSON.stringify(value),
+      );
+
+      dispatchStorageUpdate({
+        key,
+        operation: 'set',
+      });
+
+      return true;
+    } catch (error) {
+      console.error(
+        `Unable to save SHAB object: ${key}`,
+        error,
+      );
+
+      return false;
+    }
   }
 
-  saveClients(data: unknown[]) {
-    this.set('clients', data);
+  clearObject(
+    key: ObjectStorageKey,
+  ): boolean {
+    const storage = getBrowserStorage();
+
+    if (!storage) {
+      return false;
+    }
+
+    try {
+      storage.removeItem(buildKey(key));
+
+      dispatchStorageUpdate({
+        key,
+        operation: 'clear',
+      });
+
+      return true;
+    } catch (error) {
+      console.error(
+        `Unable to clear SHAB object: ${key}`,
+        error,
+      );
+
+      return false;
+    }
   }
 
-  getCases() {
-    return this.get('cases');
+  /* ==========================================
+     Module shortcuts
+  ========================================== */
+
+  getClients<T>(): T[] {
+    return this.getCollection<T>(
+      'clients',
+    );
   }
 
-  saveCases(data: unknown[]) {
-    this.set('cases', data);
+  saveClients<T>(
+    data: T[],
+  ): boolean {
+    return this.setCollection(
+      'clients',
+      data,
+    );
   }
 
-  getDocuments() {
-    return this.get('documents');
+  getCases<T>(): T[] {
+    return this.getCollection<T>(
+      'cases',
+    );
   }
 
-  saveDocuments(data: unknown[]) {
-    this.set('documents', data);
+  saveCases<T>(
+    data: T[],
+  ): boolean {
+    return this.setCollection(
+      'cases',
+      data,
+    );
   }
 
-  getPayments() {
-    return this.get('payments');
+  getDocuments<T>(): T[] {
+    return this.getCollection<T>(
+      'documents',
+    );
   }
 
-  savePayments(data: unknown[]) {
-    this.set('payments', data);
+  saveDocuments<T>(
+    data: T[],
+  ): boolean {
+    return this.setCollection(
+      'documents',
+      data,
+    );
   }
 
-  getHearings() {
-    return this.get('hearings');
+  getPayments<T>(): T[] {
+    return this.getCollection<T>(
+      'payments',
+    );
   }
 
-  saveHearings(data: unknown[]) {
-    this.set('hearings', data);
+  savePayments<T>(
+    data: T[],
+  ): boolean {
+    return this.setCollection(
+      'payments',
+      data,
+    );
   }
 
-  getCalendarEvents() {
-    return this.get(
+  getHearings<T>(): T[] {
+    return this.getCollection<T>(
+      'hearings',
+    );
+  }
+
+  saveHearings<T>(
+    data: T[],
+  ): boolean {
+    return this.setCollection(
+      'hearings',
+      data,
+    );
+  }
+
+  getCalendarEvents<T>(): T[] {
+    return this.getCollection<T>(
       'calendar-events',
     );
   }
 
-  saveCalendarEvents(
-    data: unknown[],
-  ) {
-    this.set(
+  saveCalendarEvents<T>(
+    data: T[],
+  ): boolean {
+    return this.setCollection(
       'calendar-events',
       data,
     );
   }
 
-  getTasks() {
-    return this.get('tasks');
+  getTasks<T>(): T[] {
+    return this.getCollection<T>(
+      'tasks',
+    );
   }
 
-  saveTasks(data: unknown[]) {
-    this.set('tasks', data);
+  saveTasks<T>(
+    data: T[],
+  ): boolean {
+    return this.setCollection(
+      'tasks',
+      data,
+    );
   }
 
-  getQuotations() {
-    return this.get(
+  getQuotations<T>(): T[] {
+    return this.getCollection<T>(
       'quotations',
     );
   }
 
-  saveQuotations(data: unknown[]) {
-    this.set(
+  saveQuotations<T>(
+    data: T[],
+  ): boolean {
+    return this.setCollection(
       'quotations',
       data,
     );
   }
 
-  getLegalNotices() {
-    return this.get(
+  getLegalNotices<T>(): T[] {
+    return this.getCollection<T>(
       'legal-notices',
     );
   }
 
-  saveLegalNotices(
-    data: unknown[],
-  ) {
-    this.set(
+  saveLegalNotices<T>(
+    data: T[],
+  ): boolean {
+    return this.setCollection(
       'legal-notices',
       data,
     );
   }
 
-  getStaff() {
-    return this.get('staff');
+  getStaff<T>(): T[] {
+    return this.getCollection<T>(
+      'staff',
+    );
   }
 
-  saveStaff(data: unknown[]) {
-    this.set('staff', data);
+  saveStaff<T>(
+    data: T[],
+  ): boolean {
+    return this.setCollection(
+      'staff',
+      data,
+    );
   }
 
-  getNotifications() {
-    return this.get(
+  getNotifications<T>(): T[] {
+    return this.getCollection<T>(
       'notifications',
     );
   }
 
-  saveNotifications(
-    data: unknown[],
-  ) {
-    this.set(
+  saveNotifications<T>(
+    data: T[],
+  ): boolean {
+    return this.setCollection(
       'notifications',
       data,
     );
   }
 
-  getActivityLog() {
-    return this.get(
+  getActivityLog<T>(): T[] {
+    return this.getCollection<T>(
       'activity-log',
     );
   }
 
-  saveActivityLog(
-    data: unknown[],
-  ) {
-    this.set(
+  saveActivityLog<T>(
+    data: T[],
+  ): boolean {
+    return this.setCollection(
       'activity-log',
       data,
     );
   }
 
-  getSettings() {
-    return this.get(
-      'settings',
+  /* ==========================================
+     Company settings
+  ========================================== */
+
+  getCompanySettings<T>(
+    fallback: T,
+  ): T {
+    const storage = getBrowserStorage();
+
+    if (!storage) {
+      return fallback;
+    }
+
+    const currentValue =
+      storage.getItem(
+        buildKey('company-settings'),
+      );
+
+    if (currentValue) {
+      return safeParse<T>(
+        currentValue,
+        fallback,
+      );
+    }
+
+    const legacyValue =
+      storage.getItem(
+        LEGACY_COMPANY_SETTINGS_KEY,
+      );
+
+    if (!legacyValue) {
+      return fallback;
+    }
+
+    const parsedLegacyValue =
+      safeParse<T>(
+        legacyValue,
+        fallback,
+      );
+
+    this.saveCompanySettings(
+      parsedLegacyValue,
+    );
+
+    return parsedLegacyValue;
+  }
+
+  saveCompanySettings<T>(
+    settings: T,
+  ): boolean {
+    const storage = getBrowserStorage();
+
+    if (!storage) {
+      return false;
+    }
+
+    try {
+      const serializedSettings =
+        JSON.stringify(settings);
+
+      storage.setItem(
+        buildKey('company-settings'),
+        serializedSettings,
+      );
+
+      // Keep compatibility with the existing
+      // Settings page during migration.
+      storage.setItem(
+        LEGACY_COMPANY_SETTINGS_KEY,
+        serializedSettings,
+      );
+
+      dispatchStorageUpdate({
+        key: 'company-settings',
+        operation: 'set',
+      });
+
+      return true;
+    } catch (error) {
+      console.error(
+        'Unable to save SHAB company settings.',
+        error,
+      );
+
+      return false;
+    }
+  }
+
+  /* ==========================================
+     ID counters
+  ========================================== */
+
+  getIdCounters<T>(
+    fallback: T,
+  ): T {
+    return this.getObject(
+      'id-counters',
+      fallback,
     );
   }
 
-  saveSettings(data: unknown[]) {
-    this.set(
-      'settings',
-      data,
+  saveIdCounters<T>(
+    counters: T,
+  ): boolean {
+    return this.setObject(
+      'id-counters',
+      counters,
     );
   }
 
-  /* ------------------------------
-      Backup
-  -------------------------------*/
+  /* ==========================================
+     Backup and restore
+  ========================================== */
 
-  exportDatabase() {
+  exportDatabase(): Record<
+    string,
+    unknown
+  > {
+    const storage = getBrowserStorage();
+
+    const database: Record<
+      string,
+      unknown
+    > = {};
+
+    if (!storage) {
+      return database;
+    }
+
+    for (
+      let index = 0;
+      index < storage.length;
+      index += 1
+    ) {
+      const key = storage.key(index);
+
+      if (
+        !key ||
+        !key.startsWith(PREFIX)
+      ) {
+        continue;
+      }
+
+      const rawValue =
+        storage.getItem(key);
+
+      database[key] =
+        safeParse<unknown>(
+          rawValue,
+          rawValue,
+        );
+    }
+
     return {
-      clients: this.getClients(),
-      cases: this.getCases(),
-      documents:
-        this.getDocuments(),
-      payments:
-        this.getPayments(),
-      hearings:
-        this.getHearings(),
-      calendar:
-        this.getCalendarEvents(),
-      tasks: this.getTasks(),
-      quotations:
-        this.getQuotations(),
-      legalNotices:
-        this.getLegalNotices(),
-      staff: this.getStaff(),
-      notifications:
-        this.getNotifications(),
-      activity:
-        this.getActivityLog(),
-      settings:
-        this.getSettings(),
+      application:
+        'SHAB Legal ERP',
+      version: '2.1',
+      exportedAt:
+        new Date().toISOString(),
+      data: database,
     };
+  }
+
+  importDatabase(
+    backup: unknown,
+  ): boolean {
+    const storage = getBrowserStorage();
+
+    if (!storage) {
+      return false;
+    }
+
+    if (
+      !backup ||
+      typeof backup !== 'object'
+    ) {
+      return false;
+    }
+
+    const backupRecord =
+      backup as Record<
+        string,
+        unknown
+      >;
+
+    const source =
+      backupRecord.data &&
+      typeof backupRecord.data ===
+        'object'
+        ? (backupRecord.data as Record<
+            string,
+            unknown
+          >)
+        : backupRecord;
+
+    try {
+      Object.entries(source).forEach(
+        ([key, value]) => {
+          if (
+            !key.startsWith(PREFIX)
+          ) {
+            return;
+          }
+
+          storage.setItem(
+            key,
+            JSON.stringify(value),
+          );
+        },
+      );
+
+      dispatchStorageUpdate({
+        key: 'database',
+        operation: 'import',
+      });
+
+      return true;
+    } catch (error) {
+      console.error(
+        'Unable to import SHAB database.',
+        error,
+      );
+
+      return false;
+    }
+  }
+
+  clearOperationalData(): boolean {
+    const storage = getBrowserStorage();
+
+    if (!storage) {
+      return false;
+    }
+
+    const protectedKeys = new Set([
+      buildKey('company-settings'),
+      LEGACY_COMPANY_SETTINGS_KEY,
+      buildKey('id-counters'),
+    ]);
+
+    const keysToRemove: string[] = [];
+
+    for (
+      let index = 0;
+      index < storage.length;
+      index += 1
+    ) {
+      const key = storage.key(index);
+
+      if (
+        key &&
+        key.startsWith(PREFIX) &&
+        !protectedKeys.has(key)
+      ) {
+        keysToRemove.push(key);
+      }
+    }
+
+    try {
+      keysToRemove.forEach((key) => {
+        storage.removeItem(key);
+      });
+
+      dispatchStorageUpdate({
+        key: 'operational-data',
+        operation: 'clear',
+      });
+
+      return true;
+    } catch (error) {
+      console.error(
+        'Unable to clear SHAB operational data.',
+        error,
+      );
+
+      return false;
+    }
   }
 }
 
