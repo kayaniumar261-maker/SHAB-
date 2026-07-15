@@ -682,22 +682,24 @@ export function Hearings() {
     };
 
     reader.onload = () => {
-      if (typeof reader.result !== 'string') {
-        window.alert(
-          'The selected hearing order could not be saved.',
-        );
+  const fileDataUrl = reader.result;
 
-        return;
-      }
+  if (typeof fileDataUrl !== 'string') {
+    window.alert(
+      'The selected hearing order could not be saved.',
+    );
 
-      setForm((currentForm) => ({
-        ...currentForm,
-        orderFileName: file.name,
-        orderFileType:
-          file.type || 'application/octet-stream',
-        orderFileDataUrl: reader.result,
-      }));
-    };
+    return;
+  }
+
+  setForm((currentForm) => ({
+    ...currentForm,
+    orderFileName: file.name,
+    orderFileType:
+      file.type || 'application/octet-stream',
+    orderFileDataUrl: fileDataUrl,
+  }));
+};
 
     reader.readAsDataURL(file);
   };
