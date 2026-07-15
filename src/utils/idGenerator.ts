@@ -1,6 +1,9 @@
 /* ==========================================
    SHAB ERP Professional ID Generator
+   Enterprise Version 2.0
 ========================================== */
+
+import { Storage } from '../services/storage';
 
 export type IdPrefix =
   | 'CLI'
@@ -13,50 +16,82 @@ export type IdPrefix =
   | 'QTN'
   | 'LNT'
   | 'TSK'
-  | 'INV';
-
-const STORAGE_KEY = 'shab-id-counters';
+  | 'INV'
+  | 'EXP';
 
 type CounterMap = Record<string, number>;
 
-function loadCounters(): CounterMap {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+const EMPTY_COUNTERS: CounterMap = {};
 
-    if (!raw) {
-      return {};
-    }
-
-    return JSON.parse(raw);
-  } catch {
-    return {};
-  }
+function getCounters(): CounterMap {
+  return Storage.getIdCounters<CounterMap>(
+    EMPTY_COUNTERS,
+  );
 }
 
-function saveCounters(counters: CounterMap) {
-  localStorage.setItem(
-    STORAGE_KEY,
-    JSON.stringify(counters),
-  );
+function saveCounters(
+  counters: CounterMap,
+): void {
+  Storage.saveIdCounters(counters);
 }
 
 export function generateId(
   prefix: IdPrefix,
 ): string {
-  const counters = loadCounters();
-
   const year = new Date().getFullYear();
 
-  const key = `${prefix}-${year}`;
+  const counters = getCounters();
 
-  const current =
-    (counters[key] ?? 0) + 1;
+  const counterKey = `${prefix}-${year}`;
 
-  counters[key] = current;
+  const nextNumber =
+    (counters[counterKey] ?? 0) + 1;
+
+  counters[counterKey] = nextNumber;
 
   saveCounters(counters);
 
+  return [
+    prefix,
+    year,
+    String(nextNumber).padStart(
+      6,
+      '0',
+    ),
+  ].join('-');
+}
+
+export function peekNextId(
+  prefix: IdPrefix,
+): string {
+  const year = new Date().getFullYear();
+
+  const counters = getCounters();
+
+  const next =
+    (counters[
+      `${prefix}-${year}`
+    ] ?? 0) + 1;
+
   return `${prefix}-${year}-${String(
-    current,
+    next,
   ).padStart(6, '0')}`;
+}
+
+export function resetCounters() {
+  saveCounters({});
+}
+
+export function getCurrentCounter(
+  prefix: IdPrefix,
+): number {
+  const year = new Date().getFullYear();
+
+  const counters = getCounters();
+
+  return (
+    counters[
+      `${prefix}-${year}`
+    ] ?? 0
+  );
 }
