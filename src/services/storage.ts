@@ -49,7 +49,7 @@ function buildKey(
   return `${PREFIX}${key}`;
 }
 
-function getBrowserStorage(): Storage | null {
+function getBrowserStorage(): globalThis.Storage | null {
   if (typeof window === 'undefined') {
     return null;
   }
