@@ -12,7 +12,7 @@ import { Dashboard } from './Pages/Dashboard';
 import { Clients } from './Pages/Clients';
 
 import { AIAssistant } from './pages/AIAssistant';
-import { Calendar } from './pages/Calendar';
+import { CalendarPage } from './pages/Calendar';
 import { Cases } from './pages/Cases';
 import { Documents } from './pages/Documents';
 import { Hearings } from './pages/Hearings';
@@ -56,7 +56,7 @@ function App() {
 
             <Route
               path="/calendar"
-              element={<Calendar />}
+              element={<CalendarPage />}
             />
 
             <Route
